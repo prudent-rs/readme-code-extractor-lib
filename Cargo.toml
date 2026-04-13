@@ -1,0 +1,21 @@
+[package]
+name = "readme-code-extractor-core"
+version = "0.1.0"
+
+edition = "2018"
+rust-version = "1.81.0"
+
+license = "BSD-2-Clause OR Apache-2.0 OR MIT"
+
+authors = ["Peter Lyons Kehl<peter.kehl@gmail.com>"]
+description = "Extract code blocks from your README.md (or another Markdown file)."
+
+categories = ["development-tools", "development-tools::testing", "rust-patterns"]
+
+keywords = ["extract", "readme", "macro", "macros"]
+
+repository = "https://github.com/prudent-rs/readme-code-extractor-core"
+homepage = "https://github.com/prudent-rs/readme-code-extractor"
+
+[dependencies]
+serde = { version = "1.0.113", features = ["derive"] }
