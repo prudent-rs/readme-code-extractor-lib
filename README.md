@@ -1,6 +1,6 @@
-# readme-code-extractor-core
+# readme-code-extractor-lib
 
-Internal: `readme-code-extractor-core` is shared between `readme-code-extractor` and
+Internal: `readme-code-extractor-lib` is shared between `readme-code-extractor` and
 `readme-code-extractor-proc`. Do not use directly. Only use through `readme-code-extractor`'s
 macros.
 
@@ -13,15 +13,15 @@ This crate doesn't necessarily follow semver. All public types and traits are se
 crate its:
 
 - Traits are sealed.
-- Types
+- Types are "sealed":
   - can't be used/referred to - other than with a generic parameter which implements a sealed trait
   - can't be instantiated (other than with `Default::default()`)
   - instances can't be cloned.
 - Values
   - are returned only as immutable and with an opaque type: `Box<dyn
-    readme_code_extractor_core::traits::Config>`.
+    readme_code_extractor_lib::traits::Config>`.
   - value parts are returned by immutable (shared) references, and with a non-Boxed opaque type,
-    like `&dyn readme_code_extractor_core::traits::config::Headers`.
+    like `&dyn readme_code_extractor_lib::traits::config::Headers`.
 
 We may have new fields added, and as far as `Default` value(s) are valid/good, there's no need for a
 new major version.

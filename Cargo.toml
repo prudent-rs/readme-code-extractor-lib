@@ -1,5 +1,5 @@
 [package]
-name = "readme-code-extractor-core"
+name = "readme-code-extractor-lib"
 version = "0.1.0"
 
 edition = "2018"
@@ -15,7 +15,7 @@ categories = ["development-tools", "development-tools::testing", "rust-patterns"
 
 keywords = ["extract", "readme", "macro", "macros"]
 
-repository = "https://github.com/prudent-rs/readme-code-extractor-core"
+repository = "https://github.com/prudent-rs/readme-code-extractor-lib"
 homepage = "https://github.com/prudent-rs/readme-code-extractor"
 
 [dependencies]

@@ -7,7 +7,8 @@ extern crate alloc;
 
 // On VS Code
 // - install https://github.com/ruschaaf/extended-embedded-languages
-// - and prefix the raw string with `/*toml*/ ` - see https://github.com/ruschaaf/extended-embedded-languages#embedded-languages
+// - and prefix the raw string with `/*toml*/ ` - see
+//   https://github.com/ruschaaf/extended-embedded-languages#embedded-languages
 #[doc = r"123\n\n1"]
 #[doc = r"123\n\n1( { []} )"]
 #[doc = /*toml*/ r#"
@@ -67,17 +68,22 @@ fn _f() -> &'static str {
 }
 
 pub mod traits {
-    //use alloc::string::String;
-    //use alloc::{borrow::ToOwned, string::String};
-    //use serde::{Deserialize, Serialize};
+    //use alloc::string::String; use alloc::{borrow::ToOwned, string::String}; use
+    //serde::{Deserialize, Serialize};
 
     pub mod config {
         //use alloc::string::String;
 
         pub trait Preamble: crate::misc::SealedTrait {
             fn is_no_preamble(&self) -> bool;
+
             fn is_copy_verbatim(&self) -> bool;
-            // @TODO Should this be ToOwned<&str>?
+
+            /// If [None], then the preamble is NOT
+            /// [crate::types::config::Preamble::ItemsWithPrefix]. If [Some], then the preamble IS
+            /// [crate::types::config::Preamble::ItemsWithPrefix], regardless of whether the
+            /// &[`str`] is empty or not. If &[`str`] is empty, then it's the same as if
+            /// [Preamble::is_copy_verbatim] was `true`.
             fn is_items_with_prefix(&self) -> Option<&str>;
         }
 
@@ -85,9 +91,12 @@ pub mod traits {
             use alloc::string::String;
 
             pub trait Inserts: crate::misc::SealedTrait {
-                // NOT returning an [Iterator], because [Iterator] would need to be `Box`-ed. We can
-                // NOT returrm `impl Iterator<Item = &'a str>``, because then this trait would NOT
-                // be dyn-compatible.
+                // - NOT returning an [Iterator], because [Iterator] would need to be `Box`-ed as
+                //   `Box<&dyn Iterator<Item = &'a str>>`. Or we would need to export a custom
+                //   Iterator type.
+                // - NOT returning `impl Iterator<Item = &'a str>`, because then this trait would
+                //   NOT be dyn-compatible.
+                // - A slice is more flexible/useable than an [Iterator].
                 fn inserts<'a>(&'a self) -> &'a [String];
 
                 fn after_insert(&self) -> &str;
@@ -125,23 +134,30 @@ pub mod types {
         /// Intentionally NOT implementing [Clone], as we don't want user code to make copies.
         #[derive(Serialize, Deserialize, Debug)]
         pub enum Preamble {
-            /// No preamble - the very first code block is a non-Preamble block (handled by injecting
-            /// any header and/or body strings if set in [crate::Config]).
+            /// No preamble - the very first code block is a non-Preamble block (handled by
+            /// injecting any header and/or body strings if set in [crate::types::Config]).
             NoPreamble,
+
             /// Expecting a preamble, but no special handling - pass as-is. Any [Headers] and/or
-            /// [crate::Config::ordinary_code_suffix] will NOT be applied (prefixed/inserted).
+            /// [crate::types::Config::ordinary_code_suffix] will NOT be applied
+            /// (prefixed/inserted).
             CopyVerbatim,
-            /// Expecting the very first code block to contain `item`s ONLY (as per
+
+            /// Expecting the very first code block to contain "items" ONLY (as per
             /// [`item`](https://lukaswirth.dev/tlborm/decl-macros/minutiae/fragment-specifiers.html#item)
-            /// captured by declarative macros (ones defined with `macro_rules!`)). For example,
-            /// `struct` definitions, `use` or `pub use` imports.
+            /// macro capturing variables in declarative macros (ones defined with `macro_rules!`)).
+            /// For example, `struct` definitions, `use` or `pub use` imports.
             ///
-            /// The [String] value is a prefix injected before each item (located in the same preamble,
-            /// that is, the very first code block). Example of a potentially useful prefix:
+            /// The [String] value is a prefix injected before each item (located in the same
+            /// preamble, that is, the very first code block). Example of a potentially useful
+            /// prefix:
             /// - `#[allow(unused_imports)]`, or
             /// - `# #[allow(unused_imports)]` where the leading `#` makes that line
             ///   [hidden](https://doc.rust-lang.org/rustdoc/write-documentation/documentation-tests.html#hiding-portions-of-the-example)
             ///   in the generated documentation.
+            ///
+            /// If the [String] value is an empty string, then this is equivalent to
+            /// [Preamble::CopyVerbatim].
             ItemsWithPrefix(String),
         }
         impl Default for Preamble {
@@ -158,17 +174,18 @@ pub mod types {
             #[serde(default)]
             pub struct Inserts {
                 /// A list of strings to be injected after the injected
-                /// [crate::config::Headers::prefix_before_insert], and before the beginning of the
-                /// existing code of each non-preamble code block. Each string from this list is to be
-                /// used exactly once, one per each non-preamble code block. The number of strings in
-                /// this list has to be the same as the number of non-preamble code blocks.
+                /// [crate::types::config::Headers::prefix_before_insert], and before the beginning
+                /// of the existing code of each non-preamble code block. Each string from this list
+                /// is to be used exactly once, one per each non-preamble code block. The number of
+                /// strings in this list has to be the same as the number of non-preamble code
+                /// blocks.
                 ///
                 /// Example of useful inserts: Names of test functions (or parts of such names) to
                 /// generate, one per each non-preamble code block.
                 pub inserts: Vec<String>,
 
-                /// Content to be injected at the beginning of each non-preamble code block, but AFTER an
-                /// insert.
+                /// Content to be injected at the beginning of each non-preamble code block, but
+                /// AFTER an insert.
                 ///
                 /// Example of useful inserts for generating test functions: `() {`.
                 pub after_insert: String,
@@ -186,8 +203,8 @@ pub mod types {
         #[derive(Serialize, Deserialize, Debug)]
         #[serde(default)]
         pub struct Headers {
-            /// Prefix to be injected at the beginning of any non-preamble code block, even before an
-            /// insert (if any).
+            /// Prefix to be injected at the beginning of any non-preamble code block, even before
+            /// an insert (if any).
             ///
             /// Example of useful prefix: `#[test] fn test_` for test functions to generate.
             pub prefix_before_insert: String,
@@ -325,16 +342,16 @@ pub fn from_toml(input: &str) -> Result<Box<dyn traits::Config>, TomlError> {
     Ok(Box::new(cfg))
 }
 
-/// Internal, used between crates `readme-code-extractor-core` and `readme-code-extractor` to
-/// assure that they're of the same version.
+/// Internal, used between crates `readme-code-extractor-lib` and `readme-code-extractor-proc` and
+/// `readme-code-extractor` to assure that they're of the same version.
 #[doc(hidden)]
 pub const fn is_exact_version(expected_version: &'static str) -> bool {
     matches!(expected_version.as_bytes(), b"0.1.0")
 }
 
-#[doc(hidden)]
+/// No need to be public.
 const _ASSERT_VERSION: () = {
     if !crate::is_exact_version(env!("CARGO_PKG_VERSION")) {
-        panic!("prudent-rs/readme-code-extractor-core is of different version than expected.");
+        panic!("prudent-rs/readme-code-extractor-lib has its function is_exact_version() out of date.");
     }
 };
