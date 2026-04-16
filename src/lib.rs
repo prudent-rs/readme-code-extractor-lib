@@ -1,7 +1,6 @@
 #![doc = include_str!("../README.md")]
 #![no_std]
 
-use alloc::boxed::Box;
 use toml::de::Error as TomlError;
 extern crate alloc;
 
@@ -68,9 +67,6 @@ fn _f() -> &'static str {
 }
 
 pub mod traits {
-    //use alloc::string::String; use alloc::{borrow::ToOwned, string::String}; use
-    //serde::{Deserialize, Serialize};
-
     pub mod config {
         //use alloc::string::String;
 
@@ -228,7 +224,6 @@ pub mod types {
     pub struct Config<S: crate::misc::SealedTrait> {
         _seal: PhantomData<S>,
 
-        // @TODO ToOwned<&str> instead?
         /// **Relative** path (relative to the directory of Rust source file that invoked the chain
         /// of macros). Defaults to "README.md".
         pub file_path: String,
@@ -337,9 +332,9 @@ mod trait_impls {
     }
 }
 
-pub fn from_toml(input: &str) -> Result<Box<dyn traits::Config>, TomlError> {
+pub fn from_toml(input: &str) -> Result<impl traits::Config, TomlError> {
     let cfg: types::Config<misc::SealedTraitImpl> = toml::from_str(input)?;
-    Ok(Box::new(cfg))
+    Ok(cfg)
 }
 
 /// Internal, used between crates `readme-code-extractor-lib` and `readme-code-extractor-proc` and
@@ -352,6 +347,8 @@ pub const fn is_exact_version(expected_version: &'static str) -> bool {
 /// No need to be public.
 const _ASSERT_VERSION: () = {
     if !crate::is_exact_version(env!("CARGO_PKG_VERSION")) {
-        panic!("prudent-rs/readme-code-extractor-lib has its function is_exact_version() out of date.");
+        panic!(
+            "prudent-rs/readme-code-extractor-lib has its function is_exact_version() out of date."
+        );
     }
 };

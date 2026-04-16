@@ -1,11 +1,10 @@
 # readme-code-extractor-lib
 
-Internal: `readme-code-extractor-lib` is shared between `readme-code-extractor` and
-`readme-code-extractor-proc`. Do not use directly. Only use through `readme-code-extractor`'s
-macros.
+Mostly internal: Most of `readme-code-extractor-lib` is to be used by `readme-code-extractor` and
+`readme-code-extractor-proc` only, not directly.
 
-The only reason for this crate to exist as separate from readme-code-extractor is documentation on
-docs.rs.
+The only initial reason for this crate to exist as separate from readme-code-extractor was to have
+examples and up-to-date published documentation (on docs.rs).
 
 ## Stability
 
