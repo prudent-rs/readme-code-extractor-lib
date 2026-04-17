@@ -33,6 +33,22 @@ mod string_literal_content {
     /// - a raw string literal `r"...", r#"..."#, r##"..."` (and so on). Do NOT escape - the
     ///   backslash character '\' in a raw string literal does no escaping.
     ///
+    /// There does exist
+    /// https://docs.rs/proc-macro2/latest/proc_macro2/struct.Literal.html#method.str_value, but
+    /// - enabling it is not trivial (its `procmacro2_semver_exempt` is NOT a feature); and anyway
+    /// - it works with `nightly` Rust toolchain only.
+    ///
+    /// Implementation notes - they matter, so you make an informed decision. We
+    /// - call `proc_macro2::Literal`'s
+    ///   [`to_string()`](https://docs.rs/proc-macro2/latest/proc_macro2/struct.Literal.html#impl-ToString-for-T)
+    /// - that returns `String`, whose **content** is enclosed within quotes `"` and any quotes (and
+    ///   special characters) are escaped.
+    /// - simply
+    ///   - if the string literal starts with a quote '"', remove the leading and trailing quotation
+    ///     marks (or, actually, slice it).
+    ///   - if the string literal starts with `r", r#", r##", r###"` etc., remove that and the
+    ///     appropriate trailing group `", "#, "xx, "xxx` etc. (actually, slice it).
+    ///
     /// PANIC is UNLIKELY - it should be only due to an internal error in rustc and/or proc_macro2.
     pub fn string_literal_content(literal: &Literal) -> impl AsRef<str> {
         // Initially it's enclosed by "...", r"...", r#"..."# etc.
@@ -124,43 +140,10 @@ mod string_literal_content {
 }
 pub use string_literal_content::string_literal_content;
 
-/// Restriction: We support only config (toml) files that
-/// - are in UTF-8 (the config content is in UTF-8).
-/// - have paths
-///   - specified as ordinary string literals `"..."`.
-///     - whose characters/content (content of the path) don't include a quote '"' and some other
-///       special character, including backslashes! (Its representation in an ordinary, non-raw Rust
-///       string literal "...." (excluding the enclosing quotes). It must be the same as it gets
-///       printed in common terminals.)
-///   - or: raw strings - TODO
-///      - RAW strings ARE GOOD - NO ESCAPING!
-///      - Good for backslashes and paths on Windows.
-///      - Good for multiline: No need to add a trailing backslash on each line (other than the last
-///        line).
-///      - BAD for multiline: The leading indentation is NOT removed. So, you want the content to
-///        start on a new line! But, such macros are likely to be used at their file's top level
-///        (rather than in a module or a function), so the raw string's actual content starting on a
-///        new line at column 0 should look OK.
-///
+/// Restriction: We support only config (toml) files that are in UTF-8 (the config content is in
+/// UTF-8).
 /// Return content of the config (toml) file.
 pub fn load_config_toml_file(config_toml_file_relative_path: &Literal) -> String {
-    // There does exist
-    // https://docs.rs/proc-macro2/latest/proc_macro2/struct.Literal.html#method.str_value, but
-    // - it's unclear how to enable it (`procmacro2_semver_exempt` is NOT a feature); and
-    // - it works with `nightly` Rust toolchain only.
-    //
-    // Instead,
-    // - call `proc_macro2::Literal`'s
-    //   [`to_string()`](https://docs.rs/proc-macro2/latest/proc_macro2/struct.Literal.html#impl-ToString-for-T)
-    // - that returns `String`, whose **content** is enclosed within quotes `"` and any quotes (and
-    //   special characters) are escaped.
-    // - simply
-    //   - if the string literal starts with a quote '"', remove the leading and trailing quotation
-    //     marks (or, actually, slice it).
-    //   - if the string literal starts with `r", r#", r##", r###"`, remove that and the appropriate
-    //     trailing group `", "#, "xx, "xxx`.
-    //
-    // Hence a restriction mentioned in rustdoc of this function.
     let config_toml_file_path_enclosed = config_toml_file_relative_path.to_string();
 
     {
