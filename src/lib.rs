@@ -98,42 +98,38 @@ mod string_literal_content {
                     } else {
                         panic!(
                             "Expecting a raw string literal, but surprised by '{c}'. \
-                                Whole literal: {enclosed}"
+                             Whole literal: {enclosed}"
                         );
                     }
                 }
                 for _ in [0..num_of_hashes] {
                     if let Some(c) = chars.next_back() {
-                        if c == '#' {
-                            continue;
-                        } else {
-                            panic!(
-                                "Expecting a raw string literal, but it seems not closed. \
-                                Surprised by character '{c}' near the end. \
-                                Whole literal: {enclosed}"
-                            );
-                        }
+                        assert_eq!(
+                            c, '#',
+                            "Expecting a raw string literal, but it seems not \
+                             closed. Surprised by character '{c}' near the end. \
+                             Whole literal: {enclosed}"
+                        );
                     } else {
                         panic!(
                             "Expecting a raw string literal, but it seems not closed. \
-                                Expecting a hash character '#' near the end, but out of \
-                                characters. Whole literal: {enclosed}"
+                             Expecting a hash character '#' near the end, but out of \
+                             characters. Whole literal: {enclosed}"
                         );
                     }
                 }
                 if let Some(c) = chars.next_back() {
-                    if c != '"' {
-                        panic!(
-                            "Expecting a raw string literal, but it seems not closed. \
-                                Expecting a quote character '\"' near the end, but received \
-                                '{c}' character instead. Whole literal: {enclosed}"
-                        );
-                    }
+                    assert_eq!(
+                        c, '"',
+                        "Expecting a raw string literal, but it seems not closed. \
+                         Expecting a quote character '\"' near the end, but \
+                         received '{c}' character instead. Whole literal: {enclosed}"
+                    );
                 } else {
                     panic!(
                         "Expecting a raw string literal, but it seems not closed. \
-                            Expecting a quote character '\"' near the end, but out of \
-                            characters. Whole literal: {enclosed}"
+                         Expecting a quote character '\"' near the end, but out of \
+                         characters. Whole literal: {enclosed}"
                     );
                 }
                 (2 + num_of_hashes, enclosed.len() - 1 - num_of_hashes)
@@ -141,7 +137,7 @@ mod string_literal_content {
         } else {
             panic!(
                 "Expecting a string literal, which would be either \"...\", or r\"...\", \
-                        r#\"...\"#, r##\"...\"## (and so on). But received: {enclosed}"
+                 r#\"...\"#, r##\"...\"## (and so on). But received: {enclosed}"
             )
         };
 
