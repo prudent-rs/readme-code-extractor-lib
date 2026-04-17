@@ -3,8 +3,8 @@ name = "readme-code-extractor-lib"
 version = "0.1.0"
 
 edition = "2024"
-# @TODFO 1.85.0 if we use https://crates.io/crates/toml/1.1.2+spec-1.1.0
-rust-version = "1.85.1"
+# Requiring Rust 1.88 for https://doc.rust-lang.org/proc_macro/struct.Span.html#method.local_file.
+rust-version = "1.88.0"
 
 license = "BSD-2-Clause OR Apache-2.0 OR MIT"
 
@@ -19,5 +19,6 @@ repository = "https://github.com/prudent-rs/readme-code-extractor-lib"
 homepage = "https://github.com/prudent-rs/readme-code-extractor"
 
 [dependencies]
+proc-macro2 = {version="1.0.60", features=["span-locations"] }
 serde = { version = "1.0.113", features = ["derive"] }
 toml = { version = "1.0.0", default-features = false, features = ["parse", "serde"] }
