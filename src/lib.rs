@@ -31,7 +31,7 @@ mod string_literal_content {
     /// Return string content stored in a given literal. The literal can be
     /// - within quotes "...", or
     /// - a raw string literal `r"...", r#"..."#, r##"..."` (and so on). Do NOT escape - the
-    ///   backslash character '\' in a raw string literal does no escaping.
+    ///   backslash character '\\' in a raw string literal does no escaping.
     ///
     /// There does exist
     /// https://docs.rs/proc-macro2/latest/proc_macro2/struct.Literal.html#method.str_value, but
@@ -246,7 +246,7 @@ const _S1: &str = /*json*/
 
 /// Internal/Only for prudent-rs/readme-code-extractor. SemVer-exempt!
 pub mod private {
-    use toml::de::Error as TomlError;
+    use proc_macro2::Literal;
 
     pub mod traits {
         use proc_macro2::Span;
@@ -410,9 +410,9 @@ pub mod private {
         ///
         /// NO need to derive Serialize, Deserialize or Default.
         #[non_exhaustive]
-        pub struct ConfigAndSpan<'a, S: crate::misc::SealedTrait> {
+        pub struct ConfigAndSpan<S: crate::misc::SealedTrait> {
             pub(crate) config: Config<S>,
-            pub(crate) span: &'a Span,
+            pub(crate) span: Span,
         }
     }
 
@@ -534,25 +534,38 @@ pub mod private {
             }
         }
 
-        impl<'a, S: SealedTrait> SealedTrait for crate::private::types::ConfigAndSpan<'a, S> {
+        impl<'a, S: SealedTrait> SealedTrait for crate::private::types::ConfigAndSpan<S> {
             #[allow(private_interfaces)]
             fn _seal(&self, _: &SealedTraitParam) {}
         }
         impl<'a, S: SealedTrait> crate::private::traits::ConfigAndSpan
-            for crate::private::types::ConfigAndSpan<'a, S>
+            for crate::private::types::ConfigAndSpan<S>
         {
             fn config(&self) -> &dyn crate::private::traits::Config {
                 &self.config
             }
             fn span(&self) -> &proc_macro2::Span {
-                self.span
+                &self.span
             }
         }
     }
 
-    pub fn from_toml(input: &str) -> Result<impl traits::Config, TomlError> {
-        let cfg: types::Config<crate::misc::SealedTraitImpl> = toml::from_str(input)?;
-        Ok(cfg)
+    pub fn config_and_span(config_content_literal: &Literal) -> impl traits::ConfigAndSpan {
+        let config_content = crate::string_literal_content(config_content_literal);
+        let config_content = config_content.as_ref();
+        let config = toml::from_str::<types::Config<crate::misc::SealedTraitImpl>>(config_content);
+
+        match config {
+            Ok(config) => types::ConfigAndSpan::<crate::misc::SealedTraitImpl> {
+                config,
+                span: config_content_literal.span(),
+            },
+            Err(e) => {
+                panic!(
+                    "Couldn't parse given literal's content as an expected TOML config. Content: {config_content}\n{e:?}"
+                )
+            }
+        }
     }
 }
 
