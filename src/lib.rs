@@ -217,7 +217,6 @@ pub mod misc {
     }
 
     /// Intentionally NOT public.
-    //#[allow(dead_code)]
     pub(crate) struct SealedTraitImpl {}
     impl SealedTrait for SealedTraitImpl {
         fn _seal(&self, _: &SealedTraitParam) {}
@@ -245,326 +244,326 @@ const _S1: &str = /*json*/
 "#;
 
 /// Internal/Only for prudent-rs/readme-code-extractor. SemVer-exempt!
-pub mod private {
-    use proc_macro2::Literal;
+pub mod traits {
+    use proc_macro2::Span;
+    pub mod config {
+        //use alloc::string::String;
 
-    pub mod traits {
-        use proc_macro2::Span;
-        pub mod config {
-            //use alloc::string::String;
+        pub trait Preamble: crate::misc::SealedTrait {
+            fn is_no_preamble(&self) -> bool;
 
-            pub trait Preamble: crate::misc::SealedTrait {
-                fn is_no_preamble(&self) -> bool;
+            fn is_copy_verbatim(&self) -> bool;
 
-                fn is_copy_verbatim(&self) -> bool;
+            /// If [None], then the preamble is NOT
+            /// [crate::types::config::Preamble::ItemsWithPrefix]. If [Some], then the preamble IS
+            /// [crate::types::config::Preamble::ItemsWithPrefix], regardless of whether the
+            /// &[`str`] is empty or not. If &[`str`] is empty, then it's the same as if
+            /// [Preamble::is_copy_verbatim] was `true`.
+            fn is_items_with_prefix(&self) -> Option<&str>;
+        }
 
-                /// If [None], then the preamble is NOT
-                /// [crate::private::types::config::Preamble::ItemsWithPrefix]. If [Some], then the preamble IS
-                /// [crate::private::types::config::Preamble::ItemsWithPrefix], regardless of whether the
-                /// &[`str`] is empty or not. If &[`str`] is empty, then it's the same as if
-                /// [Preamble::is_copy_verbatim] was `true`.
-                fn is_items_with_prefix(&self) -> Option<&str>;
-            }
+        pub mod headers {
+            use alloc::string::String;
 
-            pub mod headers {
-                use alloc::string::String;
+            pub trait Inserts: crate::misc::SealedTrait {
+                // - NOT returning an [Iterator], because [Iterator] would need to be `Box`-ed as
+                //   `Box<&dyn Iterator<Item = &'a str>>`. Or we would need to export a custom
+                //   Iterator type.
+                // - NOT returning `impl Iterator<Item = &'a str>`, because then this trait would
+                //   NOT be dyn-compatible.
+                // - A slice is more flexible/useable than an [Iterator].
+                fn inserts<'a>(&'a self) -> &'a [String];
 
-                pub trait Inserts: crate::misc::SealedTrait {
-                    // - NOT returning an [Iterator], because [Iterator] would need to be `Box`-ed as
-                    //   `Box<&dyn Iterator<Item = &'a str>>`. Or we would need to export a custom
-                    //   Iterator type.
-                    // - NOT returning `impl Iterator<Item = &'a str>`, because then this trait would
-                    //   NOT be dyn-compatible.
-                    // - A slice is more flexible/useable than an [Iterator].
-                    fn inserts<'a>(&'a self) -> &'a [String];
-
-                    fn after_insert(&self) -> &str;
-                }
-            }
-
-            pub trait Headers: crate::misc::SealedTrait {
-                fn prefix_before_insert(&self) -> &str;
-                fn inserts(&self) -> Option<&dyn headers::Inserts>;
+                fn after_insert(&self) -> &str;
             }
         }
 
-        pub trait Config: crate::misc::SealedTrait {
-            fn file_path(&self) -> &str;
-
-            fn preamble(&self) -> &dyn config::Preamble;
-
-            fn ordinary_code_headers(&self) -> Option<&dyn config::Headers>;
-
-            fn ordinary_code_suffix(&self) -> &str;
-        }
-
-        pub trait ConfigAndSpan: crate::misc::SealedTrait {
-            fn config(&self) -> &dyn Config;
-            fn span(&self) -> &Span;
+        pub trait Headers: crate::misc::SealedTrait {
+            fn prefix_before_insert(&self) -> &str;
+            fn inserts(&self) -> Option<&dyn headers::Inserts>;
         }
     }
 
-    pub mod types {
+    pub trait Config: crate::misc::SealedTrait {
+        fn file_path(&self) -> &str;
+
+        fn preamble(&self) -> &dyn config::Preamble;
+
+        fn ordinary_code_headers(&self) -> Option<&dyn config::Headers>;
+
+        fn ordinary_code_suffix(&self) -> &str;
+    }
+
+    pub trait ConfigAndSpan: crate::misc::SealedTrait {
+        fn config(&self) -> &dyn Config;
+        fn span(&self) -> &Span;
+    }
+}
+
+// @TODO conditional compilation - for docs.rs only. See prudent
+//
+//pub use priv_types as types;
+
+/// Internal/Only for prudent-rs/readme-code-extractor. SemVer-exempt!
+///
+/// Public only when on docs.rs, so they get documented. Feature that enables them to be public
+/// fails with a compile error if used outside of docs.rs.
+pub mod priv_types {
+    use alloc::string::String;
+    use core::marker::PhantomData;
+    use proc_macro2::Span;
+    use serde::{Deserialize, Serialize};
+
+    pub mod config {
         use alloc::string::String;
-        use core::marker::PhantomData;
-        use proc_macro2::Span;
         use serde::{Deserialize, Serialize};
 
-        pub mod config {
-            use alloc::string::String;
-            use serde::{Deserialize, Serialize};
+        /// Whether the very first code block is a preamble that needs special handling.
+        ///
+        /// Intentionally NOT implementing [Clone], as we don't want user code to make copies.
+        #[derive(Serialize, Deserialize, Debug)]
+        pub enum Preamble {
+            /// No preamble - the very first code block is a non-Preamble block (handled by
+            /// injecting any header and/or body strings if set in [crate::types::Config]).
+            NoPreamble,
 
-            /// Whether the very first code block is a preamble that needs special handling.
+            /// Expecting a preamble, but no special handling - pass as-is. Any [Headers] and/or
+            /// [crate::types::Config::ordinary_code_suffix] will NOT be applied
+            /// (prefixed/inserted).
+            CopyVerbatim,
+
+            /// Expecting the very first code block to contain "items" ONLY (as per
+            /// [`item`](https://lukaswirth.dev/tlborm/decl-macros/minutiae/fragment-specifiers.html#item)
+            /// macro capturing variables in declarative macros (ones defined with `macro_rules!`)).
+            /// For example, `struct` definitions, `use` or `pub use` imports.
             ///
-            /// Intentionally NOT implementing [Clone], as we don't want user code to make copies.
-            #[derive(Serialize, Deserialize, Debug)]
-            pub enum Preamble {
-                /// No preamble - the very first code block is a non-Preamble block (handled by
-                /// injecting any header and/or body strings if set in [crate::private::types::Config]).
-                NoPreamble,
+            /// The [String] value is a prefix injected before each item (located in the same
+            /// preamble, that is, the very first code block). Example of a potentially useful
+            /// prefix:
+            /// - `#[allow(unused_imports)]`, or
+            /// - `# #[allow(unused_imports)]` where the leading `#` makes that line
+            ///   [hidden](https://doc.rust-lang.org/rustdoc/write-documentation/documentation-tests.html#hiding-portions-of-the-example)
+            ///   in the generated documentation.
+            ///
+            /// If the [String] value is an empty string, then this is equivalent to
+            /// [Preamble::CopyVerbatim].
+            ItemsWithPrefix(String),
+        }
 
-                /// Expecting a preamble, but no special handling - pass as-is. Any [Headers] and/or
-                /// [crate::private::types::Config::ordinary_code_suffix] will NOT be applied
-                /// (prefixed/inserted).
-                CopyVerbatim,
-
-                /// Expecting the very first code block to contain "items" ONLY (as per
-                /// [`item`](https://lukaswirth.dev/tlborm/decl-macros/minutiae/fragment-specifiers.html#item)
-                /// macro capturing variables in declarative macros (ones defined with `macro_rules!`)).
-                /// For example, `struct` definitions, `use` or `pub use` imports.
-                ///
-                /// The [String] value is a prefix injected before each item (located in the same
-                /// preamble, that is, the very first code block). Example of a potentially useful
-                /// prefix:
-                /// - `#[allow(unused_imports)]`, or
-                /// - `# #[allow(unused_imports)]` where the leading `#` makes that line
-                ///   [hidden](https://doc.rust-lang.org/rustdoc/write-documentation/documentation-tests.html#hiding-portions-of-the-example)
-                ///   in the generated documentation.
-                ///
-                /// If the [String] value is an empty string, then this is equivalent to
-                /// [Preamble::CopyVerbatim].
-                ItemsWithPrefix(String),
-            }
-
-            pub mod headers {
-                use alloc::{string::String, vec::Vec};
-                use serde::{Deserialize, Serialize};
-
-                #[derive(Serialize, Deserialize, Debug)]
-                #[serde(default)]
-                pub struct Inserts {
-                    /// A list of strings to be injected after the injected
-                    /// [crate::private::types::config::Headers::prefix_before_insert], and before the beginning
-                    /// of the existing code of each non-preamble code block. Each string from this list
-                    /// is to be used exactly once, one per each non-preamble code block. The number of
-                    /// strings in this list has to be the same as the number of non-preamble code
-                    /// blocks.
-                    ///
-                    /// Example of useful inserts: Names of test functions (or parts of such names) to
-                    /// generate, one per each non-preamble code block.
-                    pub(crate) inserts: Vec<String>,
-
-                    /// Content to be injected at the beginning of each non-preamble code block, but
-                    /// AFTER an insert.
-                    ///
-                    /// Example of useful inserts for generating test functions: `() {`.
-                    pub(crate) after_insert: String,
-                }
-            }
+        pub mod headers {
+            use alloc::{string::String, vec::Vec};
+            use serde::{Deserialize, Serialize};
 
             #[derive(Serialize, Deserialize, Debug)]
             #[serde(default)]
-            pub struct Headers {
-                /// Prefix to be injected at the beginning of any non-preamble code block, even before
-                /// an insert (if any).
+            pub struct Inserts {
+                /// A list of strings to be injected after the injected
+                /// [crate::types::config::Headers::prefix_before_insert], and before the beginning
+                /// of the existing code of each non-preamble code block. Each string from this list
+                /// is to be used exactly once, one per each non-preamble code block. The number of
+                /// strings in this list has to be the same as the number of non-preamble code
+                /// blocks.
                 ///
-                /// Example of useful prefix: `#[test] fn test_` for test functions to generate.
-                pub(crate) prefix_before_insert: String,
+                /// Example of useful inserts: Names of test functions (or parts of such names) to
+                /// generate, one per each non-preamble code block.
+                pub(crate) inserts: Vec<String>,
 
-                pub(crate) inserts: Option<headers::Inserts>,
+                /// Content to be injected at the beginning of each non-preamble code block, but
+                /// AFTER an insert.
+                ///
+                /// Example of useful inserts for generating test functions: `() {`.
+                pub(crate) after_insert: String,
             }
         }
 
         #[derive(Serialize, Deserialize, Debug)]
         #[serde(default)]
-        /// To prevent the users on depending on pattern matching completeness etc.
-        #[non_exhaustive]
-        pub struct Config<S: crate::misc::SealedTrait> {
-            pub(crate) _seal: PhantomData<S>,
-
-            /// **Relative** path (relative to the directory of Rust source file that invoked the chain
-            /// of macros). Defaults to "README.md".
-            pub(crate) file_path: String,
-
-            pub(crate) preamble: config::Preamble,
-
-            pub(crate) ordinary_code_headers: Option<config::Headers>,
-
-            /// Suffix to be appended at the end of any non-preamble code block.
+        pub struct Headers {
+            /// Prefix to be injected at the beginning of any non-preamble code block, even before
+            /// an insert (if any).
             ///
-            /// Example of useful inserts for generating test functions: `}`.
-            pub(crate) ordinary_code_suffix: String,
-        }
+            /// Example of useful prefix: `#[test] fn test_` for test functions to generate.
+            pub(crate) prefix_before_insert: String,
 
-        /// To prevent the users on depending on pattern matching completeness etc.
+            pub(crate) inserts: Option<headers::Inserts>,
+        }
+    }
+
+    #[derive(Serialize, Deserialize, Debug)]
+    #[serde(default)]
+    #[non_exhaustive]
+    pub struct Config {
+        /// **Relative** path (relative to the directory of Rust source file that invoked the chain
+        /// of macros). Defaults to "README.md".
+        pub(crate) file_path: String,
+
+        pub(crate) preamble: config::Preamble,
+
+        pub(crate) ordinary_code_headers: Option<config::Headers>,
+
+        /// Suffix to be appended at the end of any non-preamble code block.
         ///
-        /// NO need to derive Serialize, Deserialize or Default.
-        #[non_exhaustive]
-        pub struct ConfigAndSpan<S: crate::misc::SealedTrait> {
-            pub(crate) config: Config<S>,
-            pub(crate) span: Span,
-        }
+        /// Example of useful inserts for generating test functions: `}`.
+        pub(crate) ordinary_code_suffix: String,
     }
 
-    mod trait_impls {
-        use crate::misc::{SealedTrait, SealedTraitParam};
-        use alloc::string::String;
-        use core::marker::PhantomData;
+    /// NO need to derive Serialize, Deserialize or Default.
+    #[non_exhaustive]
+    pub struct ConfigAndSpan {
+        pub(crate) config: Config,
+        pub(crate) span: Span,
+    }
 
-        impl SealedTrait for crate::private::types::config::Preamble {
-            #[allow(private_interfaces)]
-            fn _seal(&self, _: &SealedTraitParam) {}
-        }
-        impl Default for crate::private::types::config::Preamble {
-            fn default() -> Self {
-                Self::NoPreamble
-            }
-        }
-        impl crate::private::traits::config::Preamble for crate::private::types::config::Preamble {
-            fn is_no_preamble(&self) -> bool {
-                matches!(self, Self::NoPreamble)
-            }
-            fn is_copy_verbatim(&self) -> bool {
-                matches!(self, Self::CopyVerbatim)
-            }
-            fn is_items_with_prefix(&self) -> Option<&str> {
-                if let Self::ItemsWithPrefix(s) = self {
-                    Some(s)
-                } else {
-                    None
-                }
-            }
-        }
+    pub struct Read {
+        source_file_content: String,
+        //config_and_span: ConfigAndSpan
+    }
 
-        impl SealedTrait for crate::private::types::config::headers::Inserts {
-            #[allow(private_interfaces)]
-            fn _seal(&self, _: &SealedTraitParam) {}
-        }
-        impl Default for crate::private::types::config::headers::Inserts {
-            fn default() -> Self {
-                Self {
-                    inserts: vec![],
-                    after_insert: "".to_owned(),
-                }
-            }
-        }
-        impl crate::private::traits::config::headers::Inserts
-            for crate::private::types::config::headers::Inserts
-        {
-            fn inserts<'a>(&'a self) -> &'a [String] {
-                &self.inserts
-            }
-            fn after_insert(&self) -> &str {
-                &self.after_insert
-            }
-        }
+    pub(crate) struct Extracted<'a> {
+        pub(crate) preamble: Option<&'a str>,
+    }
+}
 
-        impl SealedTrait for crate::private::types::config::Headers {
-            #[allow(private_interfaces)]
-            fn _seal(&self, _: &SealedTraitParam) {}
-        }
-        impl Default for crate::private::types::config::Headers {
-            fn default() -> Self {
-                Self {
-                    prefix_before_insert: "".to_owned(),
-                    inserts: None,
-                }
-            }
-        }
+mod trait_impls {
+    use crate::misc::{SealedTrait, SealedTraitParam};
+    use alloc::string::String;
+    use core::marker::PhantomData;
 
-        impl crate::private::traits::config::Headers for crate::private::types::config::Headers {
-            fn prefix_before_insert(&self) -> &str {
-                &self.prefix_before_insert
-            }
-            fn inserts(&self) -> Option<&dyn crate::private::traits::config::headers::Inserts> {
-                if let Some(inserts) = &self.inserts {
-                    Some(inserts)
-                } else {
-                    None
-                }
-            }
+    impl SealedTrait for crate::priv_types::config::Preamble {
+        #[allow(private_interfaces)]
+        fn _seal(&self, _: &SealedTraitParam) {}
+    }
+    impl Default for crate::priv_types::config::Preamble {
+        fn default() -> Self {
+            Self::NoPreamble
         }
-
-        impl<S: SealedTrait> SealedTrait for crate::private::types::Config<S> {
-            #[allow(private_interfaces)]
-            fn _seal(&self, _: &SealedTraitParam) {}
+    }
+    impl crate::traits::config::Preamble for crate::priv_types::config::Preamble {
+        fn is_no_preamble(&self) -> bool {
+            matches!(self, Self::NoPreamble)
         }
-        impl<S: crate::misc::SealedTrait> Default for crate::private::types::Config<S> {
-            fn default() -> Self {
-                Self {
-                    _seal: PhantomData,
-
-                    file_path: "README.md".to_owned(),
-
-                    preamble: crate::private::types::config::Preamble::NoPreamble,
-
-                    ordinary_code_headers: None,
-                    ordinary_code_suffix: "".to_owned(),
-                }
-            }
+        fn is_copy_verbatim(&self) -> bool {
+            matches!(self, Self::CopyVerbatim)
         }
-        impl<S: SealedTrait> crate::private::traits::Config for crate::private::types::Config<S> {
-            fn file_path(&self) -> &str {
-                &self.file_path
-            }
-            fn preamble(&self) -> &dyn crate::private::traits::config::Preamble {
-                &self.preamble
-            }
-            fn ordinary_code_headers(
-                &self,
-            ) -> Option<&dyn crate::private::traits::config::Headers> {
-                if let Some(headers) = &self.ordinary_code_headers {
-                    Some(headers)
-                } else {
-                    None
-                }
-            }
-            fn ordinary_code_suffix(&self) -> &str {
-                &self.ordinary_code_suffix
-            }
-        }
-
-        impl<'a, S: SealedTrait> SealedTrait for crate::private::types::ConfigAndSpan<S> {
-            #[allow(private_interfaces)]
-            fn _seal(&self, _: &SealedTraitParam) {}
-        }
-        impl<'a, S: SealedTrait> crate::private::traits::ConfigAndSpan
-            for crate::private::types::ConfigAndSpan<S>
-        {
-            fn config(&self) -> &dyn crate::private::traits::Config {
-                &self.config
-            }
-            fn span(&self) -> &proc_macro2::Span {
-                &self.span
+        fn is_items_with_prefix(&self) -> Option<&str> {
+            if let Self::ItemsWithPrefix(s) = self {
+                Some(s)
+            } else {
+                None
             }
         }
     }
 
-    pub fn config_and_span(config_content_literal: &Literal) -> impl traits::ConfigAndSpan {
-        let config_content = crate::string_literal_content(config_content_literal);
-        let config_content = config_content.as_ref();
-        let config = toml::from_str::<types::Config<crate::misc::SealedTraitImpl>>(config_content);
-
-        match config {
-            Ok(config) => types::ConfigAndSpan::<crate::misc::SealedTraitImpl> {
-                config,
-                span: config_content_literal.span(),
-            },
-            Err(e) => {
-                panic!(
-                    "Couldn't parse given literal's content as an expected TOML config. Content: {config_content}\n{e:?}"
-                )
+    impl SealedTrait for crate::priv_types::config::headers::Inserts {
+        #[allow(private_interfaces)]
+        fn _seal(&self, _: &SealedTraitParam) {}
+    }
+    impl Default for crate::priv_types::config::headers::Inserts {
+        fn default() -> Self {
+            Self {
+                inserts: vec![],
+                after_insert: "".to_owned(),
             }
+        }
+    }
+    impl crate::traits::config::headers::Inserts for crate::priv_types::config::headers::Inserts {
+        fn inserts<'a>(&'a self) -> &'a [String] {
+            &self.inserts
+        }
+        fn after_insert(&self) -> &str {
+            &self.after_insert
+        }
+    }
+
+    impl SealedTrait for crate::priv_types::config::Headers {
+        #[allow(private_interfaces)]
+        fn _seal(&self, _: &SealedTraitParam) {}
+    }
+    impl Default for crate::priv_types::config::Headers {
+        fn default() -> Self {
+            Self {
+                prefix_before_insert: "".to_owned(),
+                inserts: None,
+            }
+        }
+    }
+
+    impl crate::traits::config::Headers for crate::priv_types::config::Headers {
+        fn prefix_before_insert(&self) -> &str {
+            &self.prefix_before_insert
+        }
+        fn inserts(&self) -> Option<&dyn crate::traits::config::headers::Inserts> {
+            if let Some(inserts) = &self.inserts {
+                Some(inserts)
+            } else {
+                None
+            }
+        }
+    }
+
+    impl SealedTrait for crate::priv_types::Config {
+        #[allow(private_interfaces)]
+        fn _seal(&self, _: &SealedTraitParam) {}
+    }
+    impl Default for crate::priv_types::Config {
+        fn default() -> Self {
+            Self {
+                file_path: "README.md".to_owned(),
+
+                preamble: crate::priv_types::config::Preamble::NoPreamble,
+
+                ordinary_code_headers: None,
+                ordinary_code_suffix: "".to_owned(),
+            }
+        }
+    }
+    impl crate::traits::Config for crate::priv_types::Config {
+        fn file_path(&self) -> &str {
+            &self.file_path
+        }
+        fn preamble(&self) -> &dyn crate::traits::config::Preamble {
+            &self.preamble
+        }
+        fn ordinary_code_headers(&self) -> Option<&dyn crate::traits::config::Headers> {
+            if let Some(headers) = &self.ordinary_code_headers {
+                Some(headers)
+            } else {
+                None
+            }
+        }
+        fn ordinary_code_suffix(&self) -> &str {
+            &self.ordinary_code_suffix
+        }
+    }
+
+    impl SealedTrait for crate::priv_types::ConfigAndSpan {
+        #[allow(private_interfaces)]
+        fn _seal(&self, _: &SealedTraitParam) {}
+    }
+    impl crate::traits::ConfigAndSpan for crate::priv_types::ConfigAndSpan {
+        fn config(&self) -> &dyn crate::traits::Config {
+            &self.config
+        }
+        fn span(&self) -> &proc_macro2::Span {
+            &self.span
+        }
+    }
+}
+
+fn config_and_span(config_content_literal: &Literal) -> impl traits::ConfigAndSpan {
+    let config_content = crate::string_literal_content(config_content_literal);
+    let config_content = config_content.as_ref();
+    let config = toml::from_str::<priv_types::Config>(config_content);
+
+    match config {
+        Ok(config) => priv_types::ConfigAndSpan {
+            config,
+            span: config_content_literal.span(),
+        },
+        Err(e) => {
+            panic!(
+                "Couldn't parse given literal's content as an expected TOML config. Content: {config_content}\n{e:?}"
+            )
         }
     }
 }
