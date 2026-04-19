@@ -341,6 +341,7 @@ pub mod public {
 /// Public only when on docs.rs, so that they get documented. Feature that enables them to be public
 /// fails with a compile error if used outside of docs.rs.
 pub mod private {
+    use crate::ReadmeBlocksIter;
     use alloc::string::String;
     use proc_macro2::Span;
     use serde::{Deserialize, Serialize};
@@ -459,9 +460,9 @@ pub mod private {
     }
 
     //#[derive(Debug)]
-    pub struct Extracted<'a, I: Iterator<Item = ReadmeBlock<'a>>> {
+    pub struct Extracted<'a> {
         pub preamble: Option<&'a str>,
-        pub non_preamble_blocks: I,
+        pub non_preamble_blocks: ReadmeBlocksIter<'a>,
     }
 }
 
@@ -625,15 +626,11 @@ mod trait_impls {
         }
     }
 
-    impl<'a, I: Iterator<Item = crate::private::ReadmeBlock<'a>>> SealedTrait
-        for crate::private::Extracted<'a, I>
-    {
+    impl<'a> SealedTrait for crate::private::Extracted<'a> {
         #[allow(private_interfaces)]
         fn _seal(&self, _: &SealedTraitParam) {}
     }
-    impl<'a, I: Iterator<Item = crate::private::ReadmeBlock<'a>>> crate::public::Extracted
-        for crate::private::Extracted<'a, I>
-    {
+    impl<'a> crate::public::Extracted for crate::private::Extracted<'a> {
         fn preamble(&self) -> Option<&str> {
             self.preamble
         }
@@ -686,6 +683,11 @@ macro_rules! peek_and_drop {
     }};
 }
 
+/// Parse a README.md-like input. It's an iterator over [private::ReadmeBlock].
+///
+/// We have used a function that called [core::iter::from_fn] and returned a similar iterator. But
+/// that complicated generc signature of [private::Extracted] to have an `impl Iterator<Item = ...>`
+/// bound. That caused its `impl` to be verbose.
 #[derive(Debug)]
 struct ReadmeBlocksIter<'a> {
     source_content: &'a str,
@@ -775,85 +777,9 @@ impl<'a> Iterator for ReadmeBlocksIter<'a> {
     }
 }
 
-// @TODO remove once sure that it's not to be used.
-fn readme_blocks_iter(source_content: &str) -> impl Iterator<Item = private::ReadmeBlock> {
-    let mut pairs = source_content.char_indices().peekable();
-
-    // Beginning of the current string slice to return. Byte index.
-    let mut item_start = 0usize;
-
-    // Type of the current item (the one to be returned, if any more input, and if input is valid).
-    // true means code, false means text.
-    let mut item_is_code = false;
-
-    // Exclusive - so it will the byte index right after the third backtick before the code itself.
-    // Used only when item_is_code==true.
-    let mut code_triple_backtick_suffix_end = Option::<usize>::None;
-
-    core::iter::from_fn(move || {
-        while let Some((byte_idx, c)) = pairs.next() {
-            if c != '\n' {
-                continue;
-            } else {
-                if item_is_code && code_triple_backtick_suffix_end == None {
-                    code_triple_backtick_suffix_end = Some(byte_idx)
-                }
-            }
-
-            if peek_and_drop!(pairs, Some((_, '`')))
-                && peek_and_drop!(pairs, Some((_, '`')))
-                && peek_and_drop!(pairs, Some((_, '`')))
-            {
-                // Handle immediate end of file - with no trailing new line
-                let next = pairs.peek();
-                let next_block_start = if let Some(&(idx, _)) = next {
-                    idx
-                } else {
-                    source_content.len()
-                };
-
-                let result = if item_is_code {
-                    let code_triple_backtick_suffix_end = code_triple_backtick_suffix_end
-                        .unwrap_or_else(|| {
-                            panic!(
-                                "Internal error: code_triple_backtick_suffix_end should be set."
-                            );
-                        });
-
-                    private::ReadmeBlock::Code(private::CodeBlock {
-                        triple_backtick_suffix: &source_content
-                            [item_start..code_triple_backtick_suffix_end],
-
-                        code: &source_content[code_triple_backtick_suffix_end..next_block_start],
-                    })
-                } else {
-                    private::ReadmeBlock::Text(&source_content[item_start..next_block_start])
-                };
-                item_is_code = !item_is_code;
-                item_start = next_block_start;
-                code_triple_backtick_suffix_end = None;
-                return Some(result);
-            }
-        }
-        if item_is_code {
-            panic!(
-                "Last code block is not enclosed with three backticks. It started at UTF-8 \n
-                 zero-based byte index {item_start}. The rest of the input was: {}",
-                &source_content[item_start..]
-            );
-        } else {
-            return if item_start < source_content.len() {
-                Some(private::ReadmeBlock::Text(&source_content[item_start..]))
-            } else {
-                None
-            };
-        }
-    })
-}
-
 #[doc(hidden)]
 pub fn extract<'a>(load: &'a impl public::Loaded) -> impl public::Extracted {
-    let readme_blocks = readme_blocks_iter(load.source_file_content());
+    let readme_blocks = ReadmeBlocksIter::new(load.source_file_content());
 
     let preamble = if !load.config().preamble().is_no_preamble() {
         None
