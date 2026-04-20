@@ -2,12 +2,6 @@
 
 // Avoid std:: and use core:: or alloc::  as much as we can.
 extern crate alloc;
-use alloc::string::String;
-use core::iter::Peekable;
-use core::str::CharIndices;
-use proc_macro2::{Literal, Span};
-use public::Config;
-use public::config::Preamble;
 
 // On VS Code
 // - install https://github.com/ruschaaf/extended-embedded-languages
@@ -43,6 +37,7 @@ pub mod misc {
     }
 
     /// Intentionally NOT public.
+    #[allow(dead_code)]
     pub(crate) struct SealedTraitImpl {}
     impl SealedTrait for SealedTraitImpl {
         fn _seal(&self, _: &SealedTraitParam) {}
@@ -168,6 +163,7 @@ pub mod public {
         /// [ReadmeBlock::is_code] must return [Some].
         fn preamble_code(&self) -> Option<&dyn ReadmeBlock>;
 
+        // @TODO see if we need/can change this to return ReadmeBlocksIter
         fn non_preamble_blocks(&mut self) -> &mut impl Iterator<Item = impl ReadmeBlock>;
         //fn non_preamble_blocks(&mut self) -> &mut dyn BlocksIteratorHolder;
     }
@@ -424,7 +420,6 @@ pub(crate) mod private {
     use serde::{Deserialize, Serialize};
 
     pub mod config {
-        use alloc::string::String;
         use serde::{Deserialize, Serialize};
 
         /// Whether the very first code block is a preamble that needs special handling.
@@ -976,6 +971,7 @@ mod tests {
         );
     }
 
+    /* @TODO move to proc macro test:
     #[test]
     fn load_file_() {
         let literal = Literal::string("tests/file_1.txt");
@@ -985,4 +981,5 @@ mod tests {
         );
         assert_eq!(file_content, "Hi from file_1.txt");
     }
+    */
 }
