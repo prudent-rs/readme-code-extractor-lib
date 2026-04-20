@@ -9,180 +9,6 @@ use proc_macro2::{Literal, Span};
 use public::Config;
 use public::config::Preamble;
 
-/// Internal, even though public - unlikely to change much. Being public makes
-/// [ConfigContentAndSpan] and other code much simpler.
-#[derive(Debug)]
-struct OwnedStringSlice {
-    s: String,
-    start_incl: usize,
-    end_excl: usize,
-}
-impl OwnedStringSlice {
-    pub fn new(s: String, start_incl: usize, end_excl: usize) -> Self {
-        Self {
-            s,
-            start_incl,
-            end_excl,
-        }
-    }
-}
-impl AsRef<str> for OwnedStringSlice {
-    fn as_ref(&self) -> &str {
-        &self.s[self.start_incl..self.end_excl]
-    }
-}
-
-/// Return string content stored in a given literal. The literal can be
-/// - within quotes "...", or
-/// - a raw string literal `r"...", r#"..."#, r##"..."` (and so on). Do NOT escape - the
-///   backslash character '\\' in a raw string literal does no escaping.
-///
-/// There does exist
-/// https://docs.rs/proc-macro2/latest/proc_macro2/struct.Literal.html#method.str_value, but
-/// - enabling it is not trivial (its `procmacro2_semver_exempt` is NOT a feature); and anyway
-/// - it works with `nightly` Rust toolchain only.
-///
-/// Implementation notes - they matter, so you make an informed decision. We
-/// - call `proc_macro2::Literal`'s
-///   [`to_string()`](https://docs.rs/proc-macro2/latest/proc_macro2/struct.Literal.html#impl-ToString-for-T)
-/// - that returns `String`, whose **content** is enclosed within quotes `"` and any quotes (and
-///   special characters) are escaped.
-/// - simply
-///   - if the string literal starts with a quote '"', remove the leading and trailing quotation
-///     marks (or, actually, slice it).
-///   - if the string literal starts with `r", r#", r##", r###"` etc., remove that and the
-///     appropriate trailing group `", "#, "xx, "xxx` etc. (actually, slice it).
-///
-/// PANIC is UNLIKELY - it should be only due to an internal error in rustc and/or proc_macro2.
-pub fn string_literal_content(literal: &Literal) -> OwnedStringSlice {
-    // Initially it's enclosed by "...", r"...", r#"..."# etc.
-    let enclosed = literal.to_string();
-    if enclosed.len() < 2 {
-        panic!(
-            "Expecting an enclosed string literal (at least two bytes), but received: {}",
-            enclosed
-        );
-    }
-    // ASCII is common for code scope-only configuration, so applying the initial size same as
-    // number of bytes.
-    //let mut chars = Vec::with_capacity(enclosed.len());
-    //chars.extend(enclosed.chars());
-    let mut chars = enclosed.chars();
-    let first = chars
-        .next()
-        .unwrap_or_else(|| panic!("Can't parse the first character of: {enclosed}"));
-
-    let (start_incl, end_excl) = if first == '"' || first == 'r' {
-        if first == '"' {
-            // ordinary "string literals"
-            let last = chars
-                .next_back()
-                .unwrap_or_else(|| panic!("Can't parse the last character of: {enclosed}"));
-
-            assert_eq!(
-                last, '"',
-                "Expecting the last character to be a closing quote '\"', but it's: '{last}'."
-            );
-            (1, enclosed.len() - 1)
-        } else {
-            // raw string literals
-            let mut num_of_hashes = 0usize;
-            while let Some(c) = chars.next() {
-                if c == '#' {
-                    num_of_hashes += 1;
-                    continue;
-                } else if c == '"' {
-                    break;
-                } else {
-                    panic!(
-                        "Expecting a raw string literal, but surprised by '{c}'. \
-                            Whole literal: {enclosed}"
-                    );
-                }
-            }
-            for _ in 0..num_of_hashes {
-                if let Some(c) = chars.next_back() {
-                    assert_eq!(
-                        c, '#',
-                        "Expecting a raw string literal, but it seems not \
-                            closed. Surprised by character '{c}' near the end. \
-                            Whole literal: {enclosed}"
-                    );
-                } else {
-                    panic!(
-                        "Expecting a raw string literal, but it seems not closed. \
-                            Expecting a hash character '#' near the end, but out of \
-                            characters. Whole literal: {enclosed}"
-                    );
-                }
-            }
-            if let Some(c) = chars.next_back() {
-                assert_eq!(
-                    c, '"',
-                    "Expecting a raw string literal, but it seems not closed. \
-                        Expecting a quote character '\"' near the end, but \
-                        received '{c}' character instead. Whole literal: {enclosed}"
-                );
-            } else {
-                panic!(
-                    "Expecting a raw string literal, but it seems not closed. \
-                        Expecting a quote character '\"' near the end, but out of \
-                        characters. Whole literal: {enclosed}"
-                );
-            }
-            (2 + num_of_hashes, enclosed.len() - 1 - num_of_hashes)
-        }
-    } else {
-        panic!(
-            "Expecting a string literal, which would be either \"...\", or r\"...\", \
-                r#\"...\"#, r##\"...\"## (and so on). But received: {enclosed}"
-        )
-    };
-
-    OwnedStringSlice::new(enclosed, start_incl, end_excl)
-}
-
-/// Restriction: We support only files that are in UTF-8 (the content is in UTF-8).
-///
-/// Return content of the file.
-///
-/// This function is NOT testable here, because it requires a literal that has [proc_macro2::Span]
-/// (as returned by [proc_macro2::Literal::span]) that comes from a real file and not from a test.
-/// (That is, [proc_macro2::Span::local_file] must return [Some].)
-///
-/// Therefore, this function is tested as a part of `prudent-rs/readme_code_extractor_proc`.
-pub fn load_file(file_relative_path: impl AsRef<str>, span: &Span) -> String {
-    let file_relative_path = file_relative_path.as_ref();
-
-    let cfg_file_path = {
-        let invoker_file_path = span.local_file().unwrap_or_else(|| {
-            panic!(
-                "Rust source file that invoked \
-                 readme_code_extractor_lib::load_file \
-                 (through readme_code_extractor::all_by_file! or similar) \
-                 macro for file with relative path \
-                 {file_relative_path} should have a known location."
-            )
-        });
-        let invoker_parent_dir = invoker_file_path.parent().unwrap_or_else(|| {
-            panic!(
-                "Rust source file that invoked readme_code_extractor_lib::load_file \
-                 (through readme_code_extractor::all_by_file! or similar) \
-                 macro for file with relative path {file_relative_path} \
-                 may exist, but we can't get its parent directory.",
-            )
-        });
-        invoker_parent_dir.join(file_relative_path)
-    };
-
-    // Error handling is modelling https://doc.rust-lang.org/nightly/src/core/result.rs.html
-    // > `fn unwrap_failed`, which invokes `panic!("{msg}: {error:?}");`
-    std::fs::read_to_string(&cfg_file_path).unwrap_or_else(|e| {
-        let cfg_file_path = cfg_file_path.to_str().unwrap_or("");
-        panic!("Expecting a file {cfg_file_path}, but opening it failed: {e:?}",)
-    })
-}
-
 // On VS Code
 // - install https://github.com/ruschaaf/extended-embedded-languages
 // - and prefix the raw string with `/*toml*/ ` - see
@@ -244,7 +70,7 @@ const _S1: &str = /*json*/
 
 /// Internal/Only for prudent-rs/readme-code-extractor. SemVer-exempt!
 pub mod public {
-    use proc_macro2::Span;
+    use proc_macro2::{Literal, Span};
     pub mod config {
 
         /// Whether we expect a preamble, what kind, and what prefix to inject just before its code.
@@ -295,6 +121,16 @@ pub mod public {
 
         fn ordinary_code_suffix(&self) -> &str;
     }
+    // ----
+
+    pub trait ConfigContentAndSpan: crate::misc::SealedTrait {
+        fn config_content(&self) -> &str;
+        fn span(&self) -> &Span;
+    }
+    pub trait ConfigAndSpan: crate::misc::SealedTrait {
+        fn config(&self) -> &dyn Config;
+        fn span(&self) -> &Span;
+    }
 
     pub trait Loaded: crate::misc::SealedTrait {
         fn source_file_content(&self) -> &str;
@@ -335,6 +171,322 @@ pub mod public {
         fn non_preamble_blocks(&mut self) -> &mut impl Iterator<Item = impl ReadmeBlock>;
         //fn non_preamble_blocks(&mut self) -> &mut dyn BlocksIteratorHolder;
     }
+    // ------
+
+    /// Return string content stored in a given literal. The literal can be
+    /// - within quotes "...", or
+    /// - a raw string literal `r"...", r#"..."#, r##"..."` (and so on). Do NOT escape - the
+    ///   backslash character '\\' in a raw string literal does no escaping.
+    ///
+    /// There does exist
+    /// https://docs.rs/proc-macro2/latest/proc_macro2/struct.Literal.html#method.str_value, but
+    /// - enabling it is not trivial (its `procmacro2_semver_exempt` is NOT a feature); and anyway
+    /// - it works with `nightly` Rust toolchain only.
+    ///
+    /// Implementation notes - they matter, so you make an informed decision. We
+    /// - call `proc_macro2::Literal`'s
+    ///   [`to_string()`](https://docs.rs/proc-macro2/latest/proc_macro2/struct.Literal.html#impl-ToString-for-T)
+    /// - that returns `String`, whose **content** is enclosed within quotes `"` and any quotes (and
+    ///   special characters) are escaped.
+    /// - simply
+    ///   - if the string literal starts with a quote '"', remove the leading and trailing quotation
+    ///     marks (or, actually, slice it).
+    ///   - if the string literal starts with `r", r#", r##", r###"` etc., remove that and the
+    ///     appropriate trailing group `", "#, "xx, "xxx` etc. (actually, slice it).
+    ///
+    /// PANIC is UNLIKELY - it should be only due to an internal error in rustc and/or proc_macro2.
+    pub fn string_literal_content(literal: &Literal) -> impl AsRef<str> {
+        // Initially it's enclosed by "...", r"...", r#"..."# etc.
+        let enclosed = literal.to_string();
+        if enclosed.len() < 2 {
+            panic!(
+                "Expecting an enclosed string literal (at least two bytes), but received: {}",
+                enclosed
+            );
+        }
+        // ASCII is common for code scope-only configuration, so applying the initial size same as
+        // number of bytes.
+        //let mut chars = Vec::with_capacity(enclosed.len());
+        //chars.extend(enclosed.chars());
+        let mut chars = enclosed.chars();
+        let first = chars
+            .next()
+            .unwrap_or_else(|| panic!("Can't parse the first character of: {enclosed}"));
+
+        let (start_incl, end_excl) = if first == '"' || first == 'r' {
+            if first == '"' {
+                // ordinary "string literals"
+                let last = chars
+                    .next_back()
+                    .unwrap_or_else(|| panic!("Can't parse the last character of: {enclosed}"));
+
+                assert_eq!(
+                    last, '"',
+                    "Expecting the last character to be a closing quote '\"', but it's: '{last}'."
+                );
+                (1, enclosed.len() - 1)
+            } else {
+                // raw string literals
+                let mut num_of_hashes = 0usize;
+                while let Some(c) = chars.next() {
+                    if c == '#' {
+                        num_of_hashes += 1;
+                        continue;
+                    } else if c == '"' {
+                        break;
+                    } else {
+                        panic!(
+                            "Expecting a raw string literal, but surprised by '{c}'. \
+                                Whole literal: {enclosed}"
+                        );
+                    }
+                }
+                for _ in 0..num_of_hashes {
+                    if let Some(c) = chars.next_back() {
+                        assert_eq!(
+                            c, '#',
+                            "Expecting a raw string literal, but it seems not \
+                                closed. Surprised by character '{c}' near the end. \
+                                Whole literal: {enclosed}"
+                        );
+                    } else {
+                        panic!(
+                            "Expecting a raw string literal, but it seems not closed. \
+                                Expecting a hash character '#' near the end, but out of \
+                                characters. Whole literal: {enclosed}"
+                        );
+                    }
+                }
+                if let Some(c) = chars.next_back() {
+                    assert_eq!(
+                        c, '"',
+                        "Expecting a raw string literal, but it seems not closed. \
+                            Expecting a quote character '\"' near the end, but \
+                            received '{c}' character instead. Whole literal: {enclosed}"
+                    );
+                } else {
+                    panic!(
+                        "Expecting a raw string literal, but it seems not closed. \
+                            Expecting a quote character '\"' near the end, but out of \
+                            characters. Whole literal: {enclosed}"
+                    );
+                }
+                (2 + num_of_hashes, enclosed.len() - 1 - num_of_hashes)
+            }
+        } else {
+            panic!(
+                "Expecting a string literal, which would be either \"...\", or r\"...\", \
+                    r#\"...\"#, r##\"...\"## (and so on). But received: {enclosed}"
+            )
+        };
+
+        crate::private::OwnedStringSlice::new(enclosed, start_incl, end_excl)
+    }
+
+    #[doc(hidden)]
+    pub fn config_content_and_span(config_content_literal: &Literal) -> impl ConfigContentAndSpan {
+        ConfigContentAndSpan {
+            config_content: crate::string_literal_content(config_content_literal),
+            span: config_content_literal.span(),
+        }
+    }
+
+    #[doc(hidden)]
+    pub fn config_and_span(config_content_and_span: &impl ConfigContentAndSpan) -> impl ConfigAndSpan {
+        let config = toml::from_str::<crate::private::Config>(config_content_and_span.config_content());
+
+        match config {
+            Ok(config) => crate::private::ConfigAndSpan {
+                config,
+                span: &config_content_and_span.span(),
+            },
+            Err(e) => {
+                panic!(
+                    "Couldn't parse given literal's content as an expected TOML config. Content: \
+                    {}\n{:?}",
+                    config_content_and_span.config_content(),
+                    e
+                )
+            }
+        }
+    }
+
+    /// Restriction: We support only files that are in UTF-8 (the content is in UTF-8).
+    ///
+    /// Return content of the file.
+    ///
+    /// This function is NOT testable here, because it requires a literal that has [proc_macro2::Span]
+    /// (as returned by [proc_macro2::Literal::span]) that comes from a real file and not from a test.
+    /// (That is, [proc_macro2::Span::local_file] must return [Some].)
+    ///
+    /// Therefore, this function is tested as a part of `prudent-rs/readme_code_extractor_proc`.
+    pub fn load_file(file_relative_path: impl AsRef<str>, span: &Span) -> String {
+        let file_relative_path = file_relative_path.as_ref();
+
+        let cfg_file_path = {
+            let invoker_file_path = span.local_file().unwrap_or_else(|| {
+                panic!(
+                    "Rust source file that invoked \
+                    readme_code_extractor_lib::load_file \
+                    (through readme_code_extractor::all_by_file! or similar) \
+                    macro for file with relative path \
+                    {file_relative_path} should have a known location."
+                )
+            });
+            let invoker_parent_dir = invoker_file_path.parent().unwrap_or_else(|| {
+                panic!(
+                    "Rust source file that invoked readme_code_extractor_lib::load_file \
+                    (through readme_code_extractor::all_by_file! or similar) \
+                    macro for file with relative path {file_relative_path} \
+                    may exist, but we can't get its parent directory.",
+                )
+            });
+            invoker_parent_dir.join(file_relative_path)
+        };
+
+        // Error handling is modelling https://doc.rust-lang.org/nightly/src/core/result.rs.html
+        // > `fn unwrap_failed`, which invokes `panic!("{msg}: {error:?}");`
+        std::fs::read_to_string(&cfg_file_path).unwrap_or_else(|e| {
+            let cfg_file_path = cfg_file_path.to_str().unwrap_or("");
+            panic!("Expecting a file {cfg_file_path}, but opening it failed: {e:?}",)
+        })
+    }
+
+    /// Peek, then conditional take & drop - only if the peeked value matches the given pattern.
+    ///
+    /// Return NOT an iterated value, but bool whether it took & dropped a value, or not.
+    macro_rules! peek_and_drop {
+        ($iter_mut:expr, $pat:pat) => {{
+            if let $pat = $iter_mut.peek() {
+                $iter_mut.next();
+                true
+            } else {
+                false
+            }
+        }};
+    }
+
+    /// Parse a README.md-like input. It's an iterator over [private::ReadmeBlock].
+    ///
+    /// We have used a function that called [core::iter::from_fn] and returned a similar iterator. But
+    /// that over-complicated the generic signature of [private::Extracted] to have an `impl
+    /// Iterator<Item = ...>` bound. That mad its `impl` verbose.
+    #[derive(Debug)]
+    struct ReadmeBlocksIter<'a> {
+        source_content: &'a str,
+        pairs: Peekable<CharIndices<'a>>,
+        item_start: usize,
+        item_is_code: bool,
+        code_triple_backtick_suffix_end: Option<usize>,
+    }
+    impl<'a> ReadmeBlocksIter<'a> {
+        fn new(source_content: &'a str) -> Self {
+            Self {
+                source_content,
+                pairs: source_content.char_indices().peekable(),
+                item_start: 0,
+                item_is_code: false,
+                code_triple_backtick_suffix_end: None,
+            }
+        }
+    }
+    impl<'a> Iterator for ReadmeBlocksIter<'a> {
+        type Item = private::ReadmeBlock<'a>;
+
+        fn next(&mut self) -> Option<private::ReadmeBlock<'a>> {
+            while let Some((byte_idx, c)) = self.pairs.next() {
+                if c != '\n' {
+                    continue;
+                } else {
+                    if self.item_is_code && self.code_triple_backtick_suffix_end == None {
+                        self.code_triple_backtick_suffix_end = Some(byte_idx)
+                    }
+                }
+
+                if peek_and_drop!(self.pairs, Some((_, '`')))
+                    && peek_and_drop!(self.pairs, Some((_, '`')))
+                    && peek_and_drop!(self.pairs, Some((_, '`')))
+                {
+                    // Handle immediate end of file - with no trailing new line
+                    let next = self.pairs.peek();
+                    let next_block_start = if let Some(&(idx, _)) = next {
+                        idx
+                    } else {
+                        self.source_content.len()
+                    };
+
+                    let result = if self.item_is_code {
+                        let code_triple_backtick_suffix_end =
+                            self.code_triple_backtick_suffix_end.unwrap_or_else(|| {
+                                panic!(
+                                    "Internal error: code_triple_backtick_suffix_end should be set."
+                                );
+                            });
+
+                        private::ReadmeBlock::Code(private::CodeBlock {
+                            triple_backtick_suffix: &self.source_content
+                                [self.item_start..code_triple_backtick_suffix_end],
+
+                            code: &self.source_content
+                                [code_triple_backtick_suffix_end..next_block_start],
+                        })
+                    } else {
+                        private::ReadmeBlock::Text(
+                            &self.source_content[self.item_start..next_block_start],
+                        )
+                    };
+                    self.item_is_code = !self.item_is_code;
+                    self.item_start = next_block_start;
+                    self.code_triple_backtick_suffix_end = None;
+                    return Some(result);
+                }
+            }
+            if self.item_is_code {
+                panic!(
+                    "Last code block is not enclosed with three backticks. It started at UTF-8 \n
+                    zero-based byte index {}. The rest of the input was: {}",
+                    self.item_start,
+                    &self.source_content[self.item_start..]
+                );
+            } else {
+                return if self.item_start < self.source_content.len() {
+                    Some(private::ReadmeBlock::Text(
+                        &self.source_content[self.item_start..],
+                    ))
+                } else {
+                    None
+                };
+            }
+        }
+    }
+
+    #[doc(hidden)]
+    pub fn load_readme(config_and_span: &impl ConfigAndSpan) -> impl Loaded {
+        crate::private::Loaded {
+            source_file_content: load_file(&config_and_span.config().file_path(), config_and_span.span()),
+            config: config_and_span.config(),
+            span: config_and_span.span(),
+        }
+    }
+
+
+    #[doc(hidden)]
+    pub fn extract<'a>(load: &'a impl crate::public::Loaded) -> impl crate::public::Extracted {
+        let mut all_blocks = ReadmeBlocksIter::new(load.source_file_content());
+
+        let preamble_text = if !load.config().preamble().is_no_preamble() {
+            todo!()
+        } else {
+            None
+        };
+        let preamble_code = todo!();
+
+        private::Extracted {
+            preamble_text,
+            preamble_code,
+            non_preamble_blocks: all_blocks,
+        }
+    }
 }
 
 // @TODO conditional compilation - for docs.rs only. See prudent
@@ -345,8 +497,7 @@ pub mod public {
 ///
 /// Public only when on docs.rs, so that they get documented. Feature that enables them to be public
 /// fails with a compile error if used outside of docs.rs.
-pub mod private {
-    use crate::ReadmeBlocksIter;
+pub(crate) mod private {
     use alloc::string::String;
     use proc_macro2::Span;
     use serde::{Deserialize, Serialize};
@@ -388,7 +539,7 @@ pub mod private {
         }
 
         pub mod headers {
-            use alloc::{string::String, vec::Vec};
+            use alloc::vec::Vec;
             use serde::{Deserialize, Serialize};
 
             #[derive(Serialize, Deserialize, Debug)]
@@ -427,6 +578,27 @@ pub mod private {
         }
     }
 
+    #[derive(Debug)]
+    pub struct OwnedStringSlice {
+        s: String,
+        start_incl: usize,
+        end_excl: usize,
+    }
+    impl OwnedStringSlice {
+        pub fn new(s: String, start_incl: usize, end_excl: usize) -> Self {
+            Self {
+                s,
+                start_incl,
+                end_excl,
+            }
+        }
+    }
+    impl AsRef<str> for OwnedStringSlice {
+        fn as_ref(&self) -> &str {
+            &self.s[self.start_incl..self.end_excl]
+        }
+    }
+
     #[derive(Serialize, Deserialize, Debug)]
     #[serde(default)]
     #[non_exhaustive]
@@ -445,6 +617,19 @@ pub mod private {
         ///
         /// Example of useful inserts for generating test functions: `}`.
         pub(crate) ordinary_code_suffix: String,
+    }
+    // -----
+
+    #[derive(Debug)]
+    pub struct ConfigContentAndSpan {
+        pub config_content: OwnedStringSlice,
+        pub span: Span,
+    }
+
+    #[derive(Debug)]
+    pub struct ConfigAndSpan<'a> {
+        pub config: Config<'a>,
+        pub span: &'a Span,
     }
 
     #[derive(Debug)]
@@ -484,7 +669,7 @@ pub mod private {
 }
 
 mod trait_impls {
-    use crate::misc::{SealedTrait, SealedTraitParam};
+    use crate::{misc::{SealedTrait, SealedTraitParam}, public};
     use proc_macro2::Span;
 
     impl<'a> SealedTrait for crate::private::config::Preamble<'a> {
@@ -596,6 +781,32 @@ mod trait_impls {
     }
     //-----
 
+    impl SealedTrait for crate::private::ConfigContentAndSpan {
+        #[allow(private_interfaces)]
+        fn _seal(&self, _: &SealedTraitParam) {}
+    }
+    impl public::ConfigContentAndSpan for crate::private::ConfigContentAndSpan {
+        fn config_content(&self) -> &str {
+            self.config_content.as_ref()
+        }
+        fn span(&self) -> &Span {
+            &self.span
+        }
+    }
+
+    impl<'a> SealedTrait for crate::private::ConfigAndSpan<'a> {
+        #[allow(private_interfaces)]
+        fn _seal(&self, _: &SealedTraitParam) {}
+    }
+    impl<'a> public::ConfigAndSpan for crate::private::ConfigAndSpan<'a> {
+        fn config(&self) -> &dyn public::Config {
+            &self.config
+        }
+        fn span(&self) -> &Span {
+            self.span
+        }
+    }
+
     impl<'a> SealedTrait for crate::private::Loaded<'a> {
         #[allow(private_interfaces)]
         fn _seal(&self, _: &SealedTraitParam) {}
@@ -663,184 +874,6 @@ mod trait_impls {
     }
 }
 
-//@TODO Make sealed traits; Move to public:: and private::
-#[doc(hidden)]
-#[derive(Debug)]
-pub struct ConfigContentAndSpan {
-    config_content: OwnedStringSlice,
-    span: Span,
-}
-
-#[doc(hidden)]
-pub fn config_content_and_span(config_content_literal: &Literal) -> ConfigContentAndSpan {
-    ConfigContentAndSpan {
-        config_content: crate::string_literal_content(config_content_literal),
-        span: config_content_literal.span(),
-    }
-}
-
-#[doc(hidden)]
-#[derive(Debug)]
-pub struct ConfigAndSpan<'a> {
-    config: private::Config<'a>,
-    span: &'a Span,
-}
-
-#[doc(hidden)]
-pub fn config_and_span(config_content_and_span: &ConfigContentAndSpan) -> ConfigAndSpan {
-    let config = toml::from_str::<private::Config>(config_content_and_span.config_content.as_ref());
-
-    match config {
-        Ok(config) => ConfigAndSpan {
-            config,
-            span: &config_content_and_span.span,
-        },
-        Err(e) => {
-            panic!(
-                "Couldn't parse given literal's content as an expected TOML config. Content: \
-                 {}\n{:?}",
-                config_content_and_span.config_content.as_ref(),
-                e
-            )
-        }
-    }
-}
-
-#[doc(hidden)]
-pub fn load_readme(config_and_span: &ConfigAndSpan) -> impl public::Loaded {
-    private::Loaded {
-        source_file_content: load_file(&config_and_span.config.file_path, config_and_span.span),
-        config: &config_and_span.config,
-        span: config_and_span.span,
-    }
-}
-
-/// Peek, then conditional take & drop - only if the peeked value matches the given pattern.
-///
-/// Return NOT an iterated value, but bool whether it took & dropped a value, or not.
-macro_rules! peek_and_drop {
-    ($iter_mut:expr, $pat:pat) => {{
-        if let $pat = $iter_mut.peek() {
-            $iter_mut.next();
-            true
-        } else {
-            false
-        }
-    }};
-}
-
-/// Parse a README.md-like input. It's an iterator over [private::ReadmeBlock].
-///
-/// We have used a function that called [core::iter::from_fn] and returned a similar iterator. But
-/// that over-complicated the generic signature of [private::Extracted] to have an `impl
-/// Iterator<Item = ...>` bound. That mad its `impl` verbose.
-#[derive(Debug)]
-struct ReadmeBlocksIter<'a> {
-    source_content: &'a str,
-    pairs: Peekable<CharIndices<'a>>,
-    item_start: usize,
-    item_is_code: bool,
-    code_triple_backtick_suffix_end: Option<usize>,
-}
-impl<'a> ReadmeBlocksIter<'a> {
-    fn new(source_content: &'a str) -> Self {
-        Self {
-            source_content,
-            pairs: source_content.char_indices().peekable(),
-            item_start: 0,
-            item_is_code: false,
-            code_triple_backtick_suffix_end: None,
-        }
-    }
-}
-impl<'a> Iterator for ReadmeBlocksIter<'a> {
-    type Item = private::ReadmeBlock<'a>;
-
-    fn next(&mut self) -> Option<private::ReadmeBlock<'a>> {
-        while let Some((byte_idx, c)) = self.pairs.next() {
-            if c != '\n' {
-                continue;
-            } else {
-                if self.item_is_code && self.code_triple_backtick_suffix_end == None {
-                    self.code_triple_backtick_suffix_end = Some(byte_idx)
-                }
-            }
-
-            if peek_and_drop!(self.pairs, Some((_, '`')))
-                && peek_and_drop!(self.pairs, Some((_, '`')))
-                && peek_and_drop!(self.pairs, Some((_, '`')))
-            {
-                // Handle immediate end of file - with no trailing new line
-                let next = self.pairs.peek();
-                let next_block_start = if let Some(&(idx, _)) = next {
-                    idx
-                } else {
-                    self.source_content.len()
-                };
-
-                let result = if self.item_is_code {
-                    let code_triple_backtick_suffix_end =
-                        self.code_triple_backtick_suffix_end.unwrap_or_else(|| {
-                            panic!(
-                                "Internal error: code_triple_backtick_suffix_end should be set."
-                            );
-                        });
-
-                    private::ReadmeBlock::Code(private::CodeBlock {
-                        triple_backtick_suffix: &self.source_content
-                            [self.item_start..code_triple_backtick_suffix_end],
-
-                        code: &self.source_content
-                            [code_triple_backtick_suffix_end..next_block_start],
-                    })
-                } else {
-                    private::ReadmeBlock::Text(
-                        &self.source_content[self.item_start..next_block_start],
-                    )
-                };
-                self.item_is_code = !self.item_is_code;
-                self.item_start = next_block_start;
-                self.code_triple_backtick_suffix_end = None;
-                return Some(result);
-            }
-        }
-        if self.item_is_code {
-            panic!(
-                "Last code block is not enclosed with three backticks. It started at UTF-8 \n
-                 zero-based byte index {}. The rest of the input was: {}",
-                self.item_start,
-                &self.source_content[self.item_start..]
-            );
-        } else {
-            return if self.item_start < self.source_content.len() {
-                Some(private::ReadmeBlock::Text(
-                    &self.source_content[self.item_start..],
-                ))
-            } else {
-                None
-            };
-        }
-    }
-}
-
-#[doc(hidden)]
-pub fn extract<'a>(load: &'a impl public::Loaded) -> impl public::Extracted {
-    let mut all_blocks = ReadmeBlocksIter::new(load.source_file_content());
-
-    let preamble_text = if !load.config().preamble().is_no_preamble() {
-        todo!()
-    } else {
-        None
-    };
-    let preamble_code = todo!();
-
-    private::Extracted {
-        preamble_text,
-        preamble_code,
-        non_preamble_blocks: all_blocks,
-    }
-}
-
 // ------
 /// Internal, used between crates `readme-code-extractor-lib` and `readme-code-extractor-proc` and
 /// `readme-code-extractor` to assure that they're of the same version.
@@ -866,7 +899,7 @@ mod tests {
     fn string_literal_constructor() {
         let content = "ordinary literal";
         let literal = Literal::string(content);
-        assert_eq!(crate::string_literal_content(&literal).as_ref(), content);
+        assert_eq!(crate::public::string_literal_content(&literal).as_ref(), content);
     }
 
     #[test]
@@ -876,7 +909,7 @@ mod tests {
         let enclosed = format!("\"{content}\"");
         let literal = Literal::from_str(&enclosed).unwrap();
 
-        assert_eq!(crate::string_literal_content(&literal).as_ref(), content);
+        assert_eq!(crate::public::string_literal_content(&literal).as_ref(), content);
     }
 
     #[test]
@@ -886,7 +919,7 @@ mod tests {
         let enclosed = format!("r\"{content}\"");
         let literal = Literal::from_str(&enclosed).unwrap();
 
-        assert_eq!(crate::string_literal_content(&literal).as_ref(), content);
+        assert_eq!(crate::public::string_literal_content(&literal).as_ref(), content);
     }
 
     #[test]
@@ -896,7 +929,7 @@ mod tests {
         let enclosed = format!("r#\"{content}\"#");
         let literal = Literal::from_str(&enclosed).unwrap();
 
-        assert_eq!(crate::string_literal_content(&literal).as_ref(), content);
+        assert_eq!(crate::public::string_literal_content(&literal).as_ref(), content);
     }
 
     #[test]
@@ -906,14 +939,14 @@ mod tests {
         let enclosed = format!("r##\"{content}\"##");
         let literal = Literal::from_str(&enclosed).unwrap();
 
-        assert_eq!(crate::string_literal_content(&literal).as_ref(), content);
+        assert_eq!(crate::public::string_literal_content(&literal).as_ref(), content);
     }
 
     #[test]
     fn load_file_() {
         let literal = Literal::string("tests/file_1.txt");
         let file_content =
-            crate::load_file(crate::string_literal_content(&literal), &literal.span());
+            crate::public::load_file(crate::public::string_literal_content(&literal), &literal.span());
         assert_eq!(file_content, "Hi from file_1.txt");
     }
 }
