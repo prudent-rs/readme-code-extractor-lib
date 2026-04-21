@@ -166,9 +166,8 @@ pub mod public {
         /// [ReadmeBlock::is_code] must return [Some].
         fn preamble_code(&self) -> Option<&dyn ReadmeBlock>;
 
-        // @TODO see if we need/can change this to return ReadmeBlocksIter
+        // @TODO see if we need/can change this to return ReadmeBlocksIterPeekable
         fn non_preamble_blocks(&mut self) -> &mut impl Iterator<Item = impl ReadmeBlock>;
-        //fn non_preamble_blocks(&mut self) -> &mut dyn BlocksIteratorHolder;
     }
     // ------
 
@@ -600,7 +599,8 @@ pub(crate) mod private {
     }
     pub(crate) type ReadmeBlocksIterPeekable<'a> = Peekable<ReadmeBlocksIter<'a>>;
 
-    /// Peek, then conditional take & drop - only if the peeked value matches the given pattern.
+    /// .peek(), then conditional .next() & drop - only if the peeked value matches the given
+    /// pattern.
     ///
     /// Return NOT an iterated value, but bool whether it took & dropped a value, or not.
     macro_rules! peek_and_drop {
