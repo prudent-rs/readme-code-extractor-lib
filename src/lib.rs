@@ -167,7 +167,7 @@ pub mod public {
         fn preamble_code(&self) -> Option<&dyn ReadmeBlock>;
 
         // @TODO see if we need/can change this to return ReadmeBlocksIterPeekable
-        fn non_preamble_blocks(&mut self) -> &mut impl Iterator<Item = impl ReadmeBlock>;
+        fn non_preamble_blocks(&mut self) -> &mut dyn Iterator<Item = impl ReadmeBlock>;
     }
     // ------
 
@@ -919,7 +919,7 @@ mod trait_impls {
         }
         fn non_preamble_blocks(
             &mut self,
-        ) -> &mut impl Iterator<Item = impl crate::public::ReadmeBlock> {
+        ) -> &mut dyn Iterator<Item = impl crate::public::ReadmeBlock> {
             &mut self.non_preamble_blocks
         }
     }
