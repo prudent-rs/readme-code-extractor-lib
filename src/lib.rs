@@ -279,7 +279,7 @@ pub mod public {
         }
     }
 
-    pub trait Extracted<'a>: crate::public::sealed::Trait + Debug {
+    pub trait ExtractedReadme<'a>: crate::public::sealed::Trait + Debug {
         /// Content of the first text block, if any, but only if we do expect a preamble, that is,
         /// if [crate::public::config::Preamble::is_no_preamble] returns `false`.
         ///
@@ -296,7 +296,7 @@ pub mod public {
 
         fn non_preamble_blocks(&mut self) -> &mut ReadmeBlocksIterPeekable<'a>;
     }
-    assert_dyn_compatible!(Extracted);
+    assert_dyn_compatible!(ExtractedReadme);
     // ------
 
     #[doc(hidden)]
@@ -516,9 +516,9 @@ pub mod public {
     }
 
     #[doc(hidden)]
-    pub fn extract<'a>(
+    pub fn extract_readme<'a>(
         load: &'a impl crate::public::LoadedReadme,
-    ) -> impl crate::public::Extracted<'a> {
+    ) -> impl crate::public::ExtractedReadme<'a> {
         let mut all_blocks =
             crate::public::ReadmeBlocksIter::new(load.source_file_content()).peekable();
 
@@ -918,7 +918,7 @@ mod trait_impls {
         #[allow(private_interfaces)]
         fn _seal(&self, _: &TraitParam) {}
     }
-    impl<'a> crate::public::Extracted<'a> for crate::private::Extracted<'a> {
+    impl<'a> crate::public::ExtractedReadme<'a> for crate::private::Extracted<'a> {
         fn preamble_text(&self) -> Option<&dyn crate::public::ReadmeBlock> {
             //self.preamble_text.as_ref()
             match &self.preamble_text {
