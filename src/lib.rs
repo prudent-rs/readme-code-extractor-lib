@@ -148,12 +148,12 @@ pub mod public {
     }
     assert_dyn_compatible!(ConfigAndSpan);
 
-    pub trait Loaded: crate::public::sealed::Trait + Debug {
+    pub trait LoadedReadme: crate::public::sealed::Trait + Debug {
         fn source_file_content(&self) -> &str;
         fn config(&self) -> &dyn Config;
         fn span(&self) -> &Span;
     }
-    assert_dyn_compatible!(Loaded);
+    assert_dyn_compatible!(LoadedReadme);
 
     pub trait CodeBlock: crate::public::sealed::Trait + Debug {
         fn triple_backtick_suffix(&self) -> &str;
@@ -504,7 +504,7 @@ pub mod public {
     }
 
     #[doc(hidden)]
-    pub fn load_readme(config_and_span: &impl ConfigAndSpan) -> impl Loaded {
+    pub fn load_readme(config_and_span: &impl ConfigAndSpan) -> impl LoadedReadme {
         crate::private::Loaded {
             source_file_content: load_file(
                 &config_and_span.config().file_path(),
@@ -516,7 +516,9 @@ pub mod public {
     }
 
     #[doc(hidden)]
-    pub fn extract<'a>(load: &'a impl crate::public::Loaded) -> impl crate::public::Extracted<'a> {
+    pub fn extract<'a>(
+        load: &'a impl crate::public::LoadedReadme,
+    ) -> impl crate::public::Extracted<'a> {
         let mut all_blocks =
             crate::public::ReadmeBlocksIter::new(load.source_file_content()).peekable();
 
@@ -868,7 +870,7 @@ mod trait_impls {
         #[allow(private_interfaces)]
         fn _seal(&self, _: &TraitParam) {}
     }
-    impl<'a> crate::public::Loaded for crate::private::Loaded<'a> {
+    impl<'a> crate::public::LoadedReadme for crate::private::Loaded<'a> {
         fn source_file_content(&self) -> &str {
             &self.source_file_content
         }
