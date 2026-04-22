@@ -164,6 +164,17 @@ pub mod public {
     pub trait ReadmeBlock: crate::public::sealed::Trait + Debug {
         fn is_text(&self) -> Option<&str>;
         fn is_code(&self) -> Option<&dyn CodeBlock>;
+        /// Return code or text content. If `self` holds [CodeBlock], then the returned `&str` is
+        /// the same as [CodeBlock::code], that is, excluding any triple backtick suffix.
+        fn content(&self) -> &str {
+            if let Some(text) = self.is_text() {
+                text
+            } else if let Some(code) = self.is_code() {
+                code.code()
+            } else {
+                unreachable!()
+            }
+        }
     }
     assert_dyn_compatible!(ReadmeBlock);
 
