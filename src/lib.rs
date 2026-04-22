@@ -158,7 +158,6 @@ pub mod public {
     pub trait ReadmeLoaded: crate::public::sealed::Trait + Debug {
         fn source_file_content(&self) -> &str;
         fn config(&self) -> &dyn Config;
-        fn span(&self) -> &Span;
     }
     assert_dyn_compatible!(ReadmeLoaded);
 
@@ -525,13 +524,12 @@ pub mod public {
 
     #[doc(hidden)]
     pub fn readme_load(config_and_span: &impl ConfigAndSpan) -> impl ReadmeLoaded {
-        crate::private::Loaded {
+        crate::private::ReadmeLoaded {
             source_file_content: load_file(
                 &config_and_span.config().file_path(),
                 config_and_span.span(),
             ),
             config: config_and_span.config(),
-            span: config_and_span.span(),
         }
     }
 
@@ -566,7 +564,7 @@ pub mod public {
             (preamble_text, preamble_code)
         };
 
-        crate::private::Extracted {
+        crate::private::ReadmeExtracted {
             preamble_text,
             preamble_code,
             non_preamble_blocks: all_blocks,
@@ -709,10 +707,9 @@ pub(crate) mod private {
     }
 
     #[derive(Debug)]
-    pub struct Loaded<'a> {
+    pub struct ReadmeLoaded<'a> {
         pub source_file_content: String,
         pub config: &'a dyn crate::public::Config,
-        pub span: &'a Span,
     }
 
     #[derive(Debug)]
@@ -728,7 +725,7 @@ pub(crate) mod private {
     }
 
     #[derive(Debug)]
-    pub struct Extracted<'a> {
+    pub struct ReadmeExtracted<'a> {
         /// [None] if [crate::public::config::Preamble::is_no_preamble]. But, it may be [None] even
         /// for configurations where preamble is configured. For example: early end of input, or no
         /// text block before the first code block.
@@ -901,19 +898,16 @@ mod trait_impls {
         }
     }
 
-    impl<'a> Trait for crate::private::Loaded<'a> {
+    impl<'a> Trait for crate::private::ReadmeLoaded<'a> {
         #[allow(private_interfaces)]
         fn _seal(&self, _: &TraitParam) {}
     }
-    impl<'a> crate::public::ReadmeLoaded for crate::private::Loaded<'a> {
+    impl<'a> crate::public::ReadmeLoaded for crate::private::ReadmeLoaded<'a> {
         fn source_file_content(&self) -> &str {
             &self.source_file_content
         }
         fn config(&self) -> &dyn crate::public::Config {
             self.config
-        }
-        fn span(&self) -> &Span {
-            self.span
         }
     }
 
@@ -956,11 +950,11 @@ mod trait_impls {
         }
     }
 
-    impl<'a> Trait for crate::private::Extracted<'a> {
+    impl<'a> Trait for crate::private::ReadmeExtracted<'a> {
         #[allow(private_interfaces)]
         fn _seal(&self, _: &TraitParam) {}
     }
-    impl<'a> crate::public::ReadmeExtracted<'a> for crate::private::Extracted<'a> {
+    impl<'a> crate::public::ReadmeExtracted<'a> for crate::private::ReadmeExtracted<'a> {
         fn preamble_text(&self) -> Option<&dyn crate::public::ReadmeBlock> {
             //self.preamble_text.as_ref()
             match &self.preamble_text {
