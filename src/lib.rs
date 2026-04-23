@@ -348,6 +348,9 @@ pub mod public {
 
             let v = iter.collect::<Vec<_>>();
             assert_eq!(v.len(), 1);
+            
+            assert!(matches!(v[0], ReadmeBlock::Text(_)));
+            assert_eq!(v[0].text().unwrap().len(), 7);
         }
 
         #[test]
@@ -361,7 +364,10 @@ pub mod public {
 
             let v = iter.collect::<Vec<_>>();
             assert_eq!(v.len(), 2);
+            
             assert!(matches!(v[0], ReadmeBlock::Text(_)));
+            assert_eq!(v[0].text().unwrap().len(), 7);
+
             assert!(matches!(v[1], ReadmeBlock::Code(_)));
             assert_eq!(v[1].code().unwrap().code().len(), 28);
         }
@@ -378,8 +384,10 @@ pub mod public {
 
             let v = iter.collect::<Vec<_>>();
             assert_eq!(v.len(), 3);
-            assert!(matches!(v[0], ReadmeBlock::Text(_)));
 
+            assert!(matches!(v[0], ReadmeBlock::Text(_)));
+            assert!(matches!(v[0], ReadmeBlock::Text(_)));
+            
             assert!(matches!(v[1], ReadmeBlock::Code(_)));
             assert_eq!(v[1].code().unwrap().code().len(), 19);
 
