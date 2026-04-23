@@ -1,6 +1,6 @@
 [package]
 name = "readme-code-extractor-lib"
-version = "0.1.0"
+version = "0.0.1"
 
 edition = "2024"
 # Requiring Rust 1.88 for https://doc.rust-lang.org/proc_macro/struct.Span.html#method.local_file.

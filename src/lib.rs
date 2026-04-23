@@ -198,8 +198,15 @@ pub mod public {
     pub struct ReadmeBlocksIter<'a> {
         source_content: &'a str,
         pairs: Peekable<CharIndices<'a>>,
+        /// Zero-based index of the byte where the current item starts.
         item_start: usize,
+        /// Whether the current item is a code block (rather than a text block).
         item_is_code: bool,
+        /// Zero-based index of where the triple backtick suffix ends for the current block. Only if
+        /// the current block is a code block, that is, if [ReadmeBlocksIter::item_is_code] is true.
+        /// [ReadmeBlocksIter::code_triple_backtick_suffix_end] may be [Some] even if there is NO
+        /// triple backtick suffix - then the [usize] valuewill be the same as
+        /// [ReadmeBlocksIter::item_start].
         code_triple_backtick_suffix_end: Option<usize>,
     }
     impl<'a> ReadmeBlocksIter<'a> {
@@ -234,18 +241,28 @@ pub mod public {
 
         fn next(&mut self) -> Option<crate::private::ReadmeBlock<'a>> {
             while let Some((byte_idx, c)) = self.pairs.next() {
-                if c != '\n' {
-                    continue;
-                } else {
-                    if self.item_is_code && self.code_triple_backtick_suffix_end == None {
+                if self.item_is_code && self.code_triple_backtick_suffix_end == None {
+                    if c != '\n' {
+                        continue;
+                    }
+                    assert_eq!(self.code_triple_backtick_suffix_end, None); // ? If valid assert, then simplify the next
+                    if self.code_triple_backtick_suffix_end == None {
                         self.code_triple_backtick_suffix_end = Some(byte_idx)
                     }
                 }
+
+                // Skip leading white space
+                while peek_and_drop!(self.pairs, Some((_, ' ' | '\t'))) {}
+
+                // Skip leading white space and new lines
+                while peek_and_drop!(self.pairs, Some((_, ' ' | '\t' | '\n'))) {}
+                //if true {panic!("Before triple");}
 
                 if peek_and_drop!(self.pairs, Some((_, '`')))
                     && peek_and_drop!(self.pairs, Some((_, '`')))
                     && peek_and_drop!(self.pairs, Some((_, '`')))
                 {
+                    //panic!("triple");
                     // Handle immediate end of file - with no trailing new line
                     let next = self.pairs.peek();
                     let next_block_start = if let Some(&(idx, _)) = next {
@@ -267,28 +284,32 @@ pub mod public {
                                 [self.item_start..code_triple_backtick_suffix_end],
 
                             code: &self.source_content
-                                [code_triple_backtick_suffix_end..next_block_start],
+                                [code_triple_backtick_suffix_end..next_block_start - 3],
                         })
                     } else {
                         crate::private::ReadmeBlock::Text(
-                            &self.source_content[self.item_start..next_block_start],
+                            &self.source_content[self.item_start..next_block_start - 3],
                         )
                     };
                     self.item_is_code = !self.item_is_code;
                     self.item_start = next_block_start;
                     self.code_triple_backtick_suffix_end = None;
+                    //panic!("Result: {result:?}, self: {self:?}");
                     return Some(result);
                 }
+                //panic!("AFTER the triple tick peek");
             }
             if self.item_is_code {
                 panic!(
-                    "Last code block is not enclosed with three backticks. It started at UTF-8 \n
-                    zero-based byte index {}. The rest of the input was: {}",
+                    "The last code block is not enclosed with three backticks. It started at UTF-8 \
+                    \nzero-based byte index {}. The rest of the input was: {}",
                     self.item_start,
                     &self.source_content[self.item_start..]
                 );
             } else {
                 return if self.item_start < self.source_content.len() {
+                    self.item_start = self.source_content.len();
+
                     Some(crate::private::ReadmeBlock::Text(
                         &self.source_content[self.item_start..],
                     ))
@@ -296,6 +317,38 @@ pub mod public {
                     None
                 };
             }
+        }
+    }
+    #[cfg(test)]
+    mod readme_blocks_iter_test {
+        use crate::private::ReadmeBlock;
+        use crate::public::{ReadmeBlock as _, ReadmeBlocksIter};
+
+        #[test]
+        fn simplest_one() {
+            let mut iter = ReadmeBlocksIter::new(
+                "01 text\n\
+                02 text",
+            );
+            //if true { return;}
+            let v = iter.collect::<Vec<_>>();
+            assert_eq!(v.len(), 1);
+        }
+
+        #[test]
+        fn simplest_two() {
+            let mut iter = ReadmeBlocksIter::new(
+                "01 text\n\
+                ```\n\
+                const _: &str = \"03_code\";\n\
+                ```",
+            );
+            //if true { return;}
+            let v = iter.collect::<Vec<_>>();
+            assert_eq!(v.len(), 2);
+            assert!(matches!(v[0], ReadmeBlock::Text(_)));
+            assert!(matches!(v[1], ReadmeBlock::Code(_)));
+            assert_eq!(v[1].code().unwrap().code().len(), 28);
         }
     }
 
@@ -980,7 +1033,7 @@ mod trait_impls {
 /// Internal, used between crates `readme-code-extractor-lib` and `readme-code-extractor-proc` and
 /// `readme-code-extractor` to assure that they're of the same version.
 pub const fn is_exact_version(expected_version: &'static str) -> bool {
-    matches!(expected_version.as_bytes(), b"0.1.0")
+    matches!(expected_version.as_bytes(), b"0.0.1")
 }
 
 /// No need to be public.
