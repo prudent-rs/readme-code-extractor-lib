@@ -217,6 +217,7 @@ pub mod public {
         code_triple_backtick_suffix_end: Option<Option<usize>>,
     }
     impl<'a> ReadmeBlocksIter<'a> {
+        /// We start parsing in Markdown/text mode.
         pub(crate) fn new(source_content: &'a str) -> Self {
             Self {
                 source_content,
@@ -253,12 +254,12 @@ pub mod public {
             'main: loop {
                 if self.code_triple_backtick_suffix_end == Some(None) {
                     // Find end of the triple backtick suffix (if any): Skip until new line.
-                    while let Some(&(byte_idx, c)) = self.pairs.peek() {
-                        if c != '\n' {
+                    while let Some((byte_idx, c)) = self.pairs.peek() {
+                        if *c != '\n' {
                             self.pairs.next();
                             continue;
                         }
-                        self.code_triple_backtick_suffix_end = Some(Some(byte_idx));
+                        self.code_triple_backtick_suffix_end = Some(Some(*byte_idx));
                         continue 'main;
                     }
                     break; // end of input
@@ -274,9 +275,9 @@ pub mod public {
                 {
                     //panic!("triple");
                     // Handle immediate end of file - with no trailing new line
-                    let next = self.pairs.peek();
-                    let next_block_start = if let Some(&(idx, _)) = next {
-                        idx
+                    let peek = self.pairs.peek();
+                    let next_block_start = if let Some((idx, _)) = peek {
+                        *idx
                     } else {
                         self.source_content.len()
                     };
