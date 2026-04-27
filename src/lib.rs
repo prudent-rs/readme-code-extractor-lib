@@ -456,17 +456,34 @@ pub mod public {
     assert_dyn_compatible!(ReadmeExtracted);
     // ------
 
+    #[derive(Debug)]
+    enum OwnedStringSliceBacking {
+        OwnedString(alloc::string::String),
+        AnotherOwnedStringSlice(Box<OwnedStringSlice>),
+    }
+
     #[doc(hidden)]
     #[derive(Debug)]
     pub struct OwnedStringSlice {
-        s: String,
+        s: OwnedStringSliceBacking,
         start_incl: usize,
         end_excl: usize,
     }
     impl OwnedStringSlice {
-        fn new(s: String, start_incl: usize, end_excl: usize) -> Self {
+        fn new_from_string(s: String, start_incl: usize, end_excl: usize) -> Self {
             Self {
-                s,
+                s: OwnedStringSliceBacking::OwnedString(s),
+                start_incl,
+                end_excl,
+            }
+        }
+        fn new_from_owned_string_slice(
+            s: OwnedStringSlice,
+            start_incl: usize,
+            end_excl: usize,
+        ) -> Self {
+            Self {
+                s: OwnedStringSliceBacking::AnotherOwnedStringSlice(Box::new(s)),
                 start_incl,
                 end_excl,
             }
@@ -474,7 +491,13 @@ pub mod public {
     }
     impl AsRef<str> for OwnedStringSlice {
         fn as_ref(&self) -> &str {
-            &self.s[self.start_incl..self.end_excl]
+            match &self.s {
+                OwnedStringSliceBacking::OwnedString(s) => &s[self.start_incl..self.end_excl],
+                OwnedStringSliceBacking::AnotherOwnedStringSlice(ss) => {
+                    let s: &OwnedStringSlice = ss;
+                    &s.as_ref()[self.start_incl..self.end_excl]
+                }
+            }
         }
     }
 
@@ -499,10 +522,23 @@ pub mod public {
     ///   - if the string literal starts with `r", r#", r##", r###"` etc., remove that and the
     ///     appropriate trailing group `", "#, "xx, "xxx` etc. (actually, slice it).
     ///
+    /// Parameter `enclosed` is enclosed by "...", or r"...", r#"..."# etc. You can pass [Literal]'s
+    /// `to_string()`.
+    ///
     /// PANIC is UNLIKELY - it should be only due to an internal error in rustc and/or proc_macro2.
-    pub fn string_literal_content(literal: &Literal) -> OwnedStringSlice {
-        // Initially it's enclosed by "...", r"...", r#"..."# etc.
-        let enclosed = literal.to_string();
+    pub fn string_literal_content_from_string(enclosed_owned: String) -> OwnedStringSlice {
+        let (start_incl, end_excl) = string_literal_start_end(enclosed_owned.as_ref());
+        OwnedStringSlice::new_from_string(enclosed_owned, start_incl, end_excl)
+    }
+
+    pub fn string_literal_content_from_owned_string_slice<'a>(
+        enclosed_owned: OwnedStringSlice,
+    ) -> OwnedStringSlice {
+        let (start_incl, end_excl) = string_literal_start_end(enclosed_owned.as_ref());
+        OwnedStringSlice::new_from_owned_string_slice(enclosed_owned, start_incl, end_excl)
+    }
+
+    pub fn string_literal_start_end(enclosed: &str) -> (usize, usize) {
         if enclosed.len() < 2 {
             panic!(
                 "Expecting an enclosed string literal (at least two bytes), but received: {}",
@@ -518,7 +554,7 @@ pub mod public {
             .next()
             .unwrap_or_else(|| panic!("Can't parse the first character of: {enclosed}"));
 
-        let (start_incl, end_excl) = if first == '"' || first == 'r' {
+        if first == '"' || first == 'r' {
             if first == '"' {
                 // ordinary "string literals"
                 let last = chars
@@ -583,16 +619,31 @@ pub mod public {
                 "Expecting a string literal, which would be either \"...\", or r\"...\", \
                     r#\"...\"#, r##\"...\"## (and so on). But received: {enclosed}"
             )
-        };
-
-        OwnedStringSlice::new(enclosed, start_incl, end_excl)
+        }
     }
 
     #[doc(hidden)]
     pub fn config_content_and_span(config_content_literal: &Literal) -> impl ConfigContentAndSpan {
         crate::private::ConfigContentAndSpan {
-            config_content: crate::public::string_literal_content(config_content_literal),
+            config_content: crate::public::string_literal_content_from_string(
+                config_content_literal.to_string(),
+            ),
             span: config_content_literal.span(),
+        }
+    }
+
+    #[doc(hidden)]
+    pub fn config_content_and_span_by_file(
+        config_file_path_literal: &Literal,
+    ) -> impl ConfigContentAndSpan {
+        let config_file_path =
+            crate::public::string_literal_content_from_string(config_file_path_literal.to_string());
+
+        crate::private::ConfigContentAndSpan {
+            config_content: crate::public::string_literal_content_from_owned_string_slice(
+                config_file_path,
+            ),
+            span: config_file_path_literal.span(),
         }
     }
 
@@ -634,19 +685,18 @@ pub mod public {
         let cfg_file_path = {
             let invoker_file_path = span.local_file().unwrap_or_else(|| {
                 panic!(
-                    "Rust source file that invoked \
-                    readme_code_extractor_lib::load_file \
-                    (through readme_code_extractor::all_by_file! or similar) \
-                    macro for file with relative path \
-                    {file_relative_path} should have a known location."
+                    "Rust source file that invoked readme_code_extractor_lib::load_file macro \
+                    (through one of readme_code_extractor's macros like all, all_by_file, nth, \
+                    nth_by_file) for file with relative path {file_relative_path} \
+                    should have a known location."
                 )
             });
             let invoker_parent_dir = invoker_file_path.parent().unwrap_or_else(|| {
                 panic!(
-                    "Rust source file that invoked readme_code_extractor_lib::load_file \
-                    (through readme_code_extractor::all_by_file! or similar) \
-                    macro for file with relative path {file_relative_path} \
-                    may exist, but we can't get its parent directory.",
+                    "Rust source file that invoked readme_code_extractor_lib::load_file macro \
+                    (through one of readme_code_extractor's macros like all, all_by_file, nth, \
+                    nth_by_file) for file with relative path {file_relative_path} \
+                    may exist, but we can't get its parent directory."
                 )
             });
             invoker_parent_dir.join(file_relative_path)
