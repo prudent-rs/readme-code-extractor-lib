@@ -63,7 +63,6 @@ pub mod public {
     use core::iter::Peekable;
     use core::str::CharIndices;
     use proc_macro2::{Literal, Span};
-    use std::path::PathBuf;
 
     pub mod sealed {
         /// Intentionally NOT public.
@@ -132,7 +131,9 @@ pub mod public {
     }
 
     pub trait Config: crate::public::sealed::Trait + Debug {
-        fn file_path(&self) -> &str;
+        /// Markdown file path, relative to where the relevant readme_code_extractor's macro is
+        /// being used.
+        fn markdown_file_local_path(&self) -> &str;
 
         /// Before preamble (and it applies even if [config::Preamble::is_none]).
         fn start_prefix(&self) -> &str;
@@ -158,9 +159,10 @@ pub mod public {
     assert_dyn_compatible!(ConfigAndSpan);
 
     pub trait ReadmeLoaded: crate::public::sealed::Trait + Debug {
-        fn source_file_content(&self) -> &str;
+        fn markdown_file_content(&self) -> &str;
         fn config(&self) -> &dyn Config;
-        fn source_file_full_path(&self) -> &str;
+        /// See [Config::markdown_file_local_path].
+        fn markdown_file_local_path(&self) -> &str;
     }
     assert_dyn_compatible!(ReadmeLoaded);
 
@@ -198,7 +200,7 @@ pub mod public {
     /// - not to be `&dyn`-compatible.
     #[derive(Debug)]
     pub struct ReadmeBlocksIter<'a> {
-        source_content: &'a str,
+        markdown_content: &'a str,
         pairs: Peekable<CharIndices<'a>>,
 
         /// Zero-based index of the byte where the current item starts.
@@ -220,10 +222,10 @@ pub mod public {
     }
     impl<'a> ReadmeBlocksIter<'a> {
         /// We start parsing in Markdown/text mode.
-        pub(crate) fn new(source_content: &'a str) -> Self {
+        pub(crate) fn new(markdown_content: &'a str) -> Self {
             Self {
-                source_content,
-                pairs: source_content.char_indices().peekable(),
+                markdown_content,
+                pairs: markdown_content.char_indices().peekable(),
                 item_start: 0,
                 code_triple_backtick_suffix_end: None,
             }
@@ -278,7 +280,7 @@ pub mod public {
                         *idx
                     } else {
                         // Handle immediate end of file - with no trailing new line
-                        self.source_content.len()
+                        self.markdown_content.len()
                     };
 
                     let result = if self.item_is_code() {
@@ -298,15 +300,15 @@ pub mod public {
                             });
 
                         crate::private::ReadmeBlock::Code(crate::private::CodeBlock {
-                            triple_backtick_suffix: &self.source_content
+                            triple_backtick_suffix: &self.markdown_content
                                 [self.item_start..code_triple_backtick_suffix_end],
 
-                            code: &self.source_content
+                            code: &self.markdown_content
                                 [code_triple_backtick_suffix_end..next_block_start - 3],
                         })
                     } else {
                         crate::private::ReadmeBlock::Text(
-                            &self.source_content[self.item_start..next_block_start - 3],
+                            &self.markdown_content[self.item_start..next_block_start - 3],
                         )
                     };
 
@@ -330,13 +332,14 @@ pub mod public {
                     "The last code block is not enclosed with three backticks. It started at \
                     UTF-8 byte index (indexed from zero) {}. The rest of the input was: {}",
                     self.item_start,
-                    &self.source_content[self.item_start..]
+                    &self.markdown_content[self.item_start..]
                 );
             } else {
-                return if self.item_start < self.source_content.len() {
-                    let result =
-                        crate::private::ReadmeBlock::Text(&self.source_content[self.item_start..]);
-                    self.item_start = self.source_content.len();
+                return if self.item_start < self.markdown_content.len() {
+                    let result = crate::private::ReadmeBlock::Text(
+                        &self.markdown_content[self.item_start..],
+                    );
+                    self.item_start = self.markdown_content.len();
 
                     Some(result)
                 } else {
@@ -439,7 +442,9 @@ pub mod public {
     }
 
     pub trait ReadmeExtracted<'a>: crate::public::sealed::Trait + Debug {
-        fn source_file_full_path(&self) -> &str;
+        /// See [Config::markdown_file_local_path].
+        fn markdown_file_local_path(&self) -> &str;
+
         /// Content of the first text block, if any, but only if we do expect a preamble, that is,
         /// if [crate::public::config::Preamble::is_no_preamble] returns `false`.
         ///
@@ -447,7 +452,7 @@ pub mod public {
         /// [ReadmeBlock::is_code] must return [Some].
         fn preamble_text(&self) -> Option<&dyn ReadmeBlock>;
 
-        /// Content of the first source block, if any, but only if we do expect a preamble, that is,
+        /// Content of the first code block, if any, but only if we do expect a preamble, that is,
         /// if [crate::public::config::Preamble::is_no_preamble] returns `false`.
         ///
         /// If it is [Some], then it must be the "code" variant of [ReadmeBlock], that is, its
@@ -620,21 +625,27 @@ pub mod public {
         }
     }
 
+    /// Return impl [ConfigContentAndSpan], and a path to the TOML config file.
     #[doc(hidden)]
     pub fn config_content_and_span_by_file(
         config_file_path_literal: &Literal,
-    ) -> impl ConfigContentAndSpan {
-        let config_file_path =
+    ) -> (impl ConfigContentAndSpan, OwnedStringSlice) {
+        let toml_config_file_path =
             crate::public::string_literal_content(config_file_path_literal.to_string());
 
         let span = config_file_path_literal.span();
-        let (config_content, config_file_full_path) = load_file(&config_file_path, &span);
+        //let (config_content, config_file_full_path) = load_file(&config_file_path, &span);
+        let config_content = load_file(&toml_config_file_path, &span);
         let config_content = OwnedStringSlice::new_from_whole_string(config_content);
 
-        crate::private::ConfigContentAndSpan {
-            config_content,
-            span,
-        }
+        //if true { todo!("use the full path to load to a const _: () - config_file_path: {}, config_file_full_path: {}", config_file_path.as_ref(), config_file_full_path.to_str().unwrap()); }
+        (
+            crate::private::ConfigContentAndSpan {
+                config_content,
+                span,
+            },
+            toml_config_file_path,
+        )
     }
 
     #[doc(hidden)]
@@ -662,14 +673,14 @@ pub mod public {
 
     /// Restriction: We support only files that are in UTF-8 (the content is in UTF-8).
     ///
-    /// Return content of the file, and the file's full path.
+    /// Return content of the file.
     ///
     /// This function is NOT testable here, because it requires a literal that has [proc_macro2::Span]
     /// (as returned by [proc_macro2::Literal::span]) that comes from a real file and not from a test.
     /// (That is, [proc_macro2::Span::local_file] must return [Some].)
     ///
     /// Therefore, this function is tested as a part of `prudent-rs/readme_code_extractor_proc`.
-    fn load_file(file_relative_path: impl AsRef<str>, span: &Span) -> (String, PathBuf) {
+    fn load_file(file_relative_path: impl AsRef<str>, span: &Span) -> String {
         let file_relative_path = file_relative_path.as_ref();
 
         let file_full_path = {
@@ -695,21 +706,21 @@ pub mod public {
         // Error handling is modelling https://doc.rust-lang.org/nightly/src/core/result.rs.html
         // > `fn unwrap_failed`, which invokes `panic!("{msg}: {error:?}");`
         let content = std::fs::read_to_string(&file_full_path).unwrap_or_else(|e| {
-            let file_path = file_full_path.to_str().unwrap_or("");
+            let file_path = file_full_path
+                .to_str()
+                .unwrap_or("(PATH UNKNOWN OR NOT UTF-8)");
             panic!("Expecting a file {file_path}, but opening it failed: {e:?}",)
         });
-        (content, file_full_path)
+        content
     }
 
     #[doc(hidden)]
     pub fn readme_load(config_and_span: &impl ConfigAndSpan) -> impl ReadmeLoaded {
-        let (source_file_content, source_file_full_path) = load_file(
-            &config_and_span.config().file_path(),
-            config_and_span.span(),
-        );
+        let markdown_file_local_path = config_and_span.config().markdown_file_local_path();
+        let markdown_file_content = load_file(markdown_file_local_path, config_and_span.span());
         crate::private::ReadmeLoaded {
-            source_file_content,
-            source_file_full_path,
+            markdown_file_local_path,
+            markdown_file_content,
             config: config_and_span.config(),
         }
     }
@@ -719,7 +730,7 @@ pub mod public {
         load: &'a impl crate::public::ReadmeLoaded,
     ) -> impl crate::public::ReadmeExtracted<'a> {
         let mut all_blocks =
-            crate::public::ReadmeBlocksIter::new(load.source_file_content()).peekable();
+            crate::public::ReadmeBlocksIter::new(load.markdown_file_content()).peekable();
 
         let (preamble_text, preamble_code) = if load.config().preamble().is_none() {
             (None, None)
@@ -745,9 +756,9 @@ pub mod public {
             (preamble_text, preamble_code)
         };
 
-        let source_file_full_path = load.source_file_full_path();
+        //let source_file_full_path = load.source_file_full_path();
         crate::private::ReadmeExtracted {
-            source_file_full_path,
+            markdown_file_local_path: load.markdown_file_local_path(),
             preamble_text,
             preamble_code,
             non_preamble_blocks: all_blocks,
@@ -767,7 +778,6 @@ pub(crate) mod private {
     use alloc::string::String;
     use proc_macro2::Span;
     use serde::{Deserialize, Serialize};
-    use std::path::PathBuf;
 
     pub mod config {
         use serde::{Deserialize, Serialize};
@@ -851,8 +861,8 @@ pub(crate) mod private {
     pub struct Config<'a> {
         /// **Relative** path (relative to the directory of Rust source file that invoked the chain
         /// of macros). Defaults to "README.md".
-        #[serde(default = "default_config_file_path")]
-        pub file_path: &'a str,
+        #[serde(default = "default_markdown_file_local_path")]
+        pub markdown_file_local_path: &'a str,
         /// @TODO Document (here, and in TOML examples) that prefix_before_preamble
         /// CAN be set & used even IF preamble is set to [config::Preamble::None].
         pub start_prefix: &'a str,
@@ -870,10 +880,10 @@ pub(crate) mod private {
 
         pub final_suffix: &'a str,
     }
-    fn default_config_file_path() -> &'static str {
+    pub fn default_markdown_file_local_path() -> &'static str {
         "README.md"
     }
-    fn default_config_ordinary_code_headers<'a>() -> Option<config::Headers<'a>> {
+    pub fn default_config_ordinary_code_headers<'a>() -> Option<config::Headers<'a>> {
         None
     }
     // -----
@@ -892,8 +902,8 @@ pub(crate) mod private {
 
     #[derive(Debug)]
     pub struct ReadmeLoaded<'a> {
-        pub source_file_content: String,
-        pub source_file_full_path: PathBuf,
+        pub markdown_file_content: String,
+        pub markdown_file_local_path: &'a str,
         pub config: &'a dyn crate::public::Config,
     }
 
@@ -911,7 +921,8 @@ pub(crate) mod private {
 
     #[derive(Debug)]
     pub struct ReadmeExtracted<'a> {
-        pub source_file_full_path: &'a str,
+        pub markdown_file_local_path: &'a str,
+
         /// [None] if [crate::public::config::Preamble::is_no_preamble]. But, it may be [None] even
         /// for configurations where preamble is configured. For example: early end of input, or no
         /// text block before the first code block.
@@ -1020,12 +1031,12 @@ mod trait_impls {
     impl<'a> Default for crate::private::Config<'a> {
         fn default() -> Self {
             Self {
-                file_path: "README.md",
+                markdown_file_local_path: crate::private::default_markdown_file_local_path(),
 
                 start_prefix: "",
                 preamble: crate::private::config::Preamble::None,
 
-                ordinary_code_headers: None,
+                ordinary_code_headers: crate::private::default_config_ordinary_code_headers(),
                 ordinary_code_suffix: "",
 
                 final_suffix: "",
@@ -1033,8 +1044,8 @@ mod trait_impls {
         }
     }
     impl<'a> crate::public::Config for crate::private::Config<'a> {
-        fn file_path(&self) -> &str {
-            self.file_path
+        fn markdown_file_local_path(&self) -> &str {
+            self.markdown_file_local_path
         }
         fn start_prefix(&self) -> &str {
             self.start_prefix
@@ -1089,14 +1100,17 @@ mod trait_impls {
         fn _seal(&self, _: &TraitParam) {}
     }
     impl<'a> crate::public::ReadmeLoaded for crate::private::ReadmeLoaded<'a> {
-        fn source_file_content(&self) -> &str {
-            &self.source_file_content
+        fn markdown_file_local_path(&self) -> &str {
+            self.markdown_file_local_path
         }
-        fn source_file_full_path(&self) -> &str {
-            &self.source_file_full_path.to_str().unwrap_or_else(|| {
+        fn markdown_file_content(&self) -> &str {
+            &self.markdown_file_content
+        }
+        /*fn source_file_full_path(&self) -> &str {
+            &self.markdown_file_local_path.to_str().unwrap_or_else(|| {
                 panic!("Internal error: source_file_full_path should be in UTF-8.");
             })
-        }
+        }*/
         fn config(&self) -> &dyn crate::public::Config {
             self.config
         }
@@ -1146,8 +1160,8 @@ mod trait_impls {
         fn _seal(&self, _: &TraitParam) {}
     }
     impl<'a> crate::public::ReadmeExtracted<'a> for crate::private::ReadmeExtracted<'a> {
-        fn source_file_full_path(&self) -> &str {
-            self.source_file_full_path
+        fn markdown_file_local_path(&self) -> &str {
+            self.markdown_file_local_path
         }
         fn preamble_text(&self) -> Option<&dyn crate::public::ReadmeBlock> {
             //self.preamble_text.as_ref()
