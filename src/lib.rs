@@ -66,7 +66,6 @@ pub mod public {
     use std::collections::HashSet;
 
     use proc_macro2_diagnostics::Diagnostic;
-    use proc_macro2_diagnostics::SpanDiagnosticExt as _;
 
     pub type MacroResult<T> = Result<T, Diagnostic>;
     pub type MacroDeepResult<T> = Result<T, DeepDiagnostic>;
@@ -184,12 +183,12 @@ pub mod public {
 
     pub trait ConfigContentAndSpan: crate::public::sealed::Trait + Debug {
         fn config_content(&self) -> &str;
-        fn span(&self) -> &Span;
+        fn span(&self) -> Span;
     }
     assert_dyn_compatible!(ConfigContentAndSpan);
     pub trait ConfigAndSpan: crate::public::sealed::Trait + Debug {
         fn config(&self) -> &dyn Config;
-        fn span(&self) -> &Span;
+        fn span(&self) -> Span;
     }
     assert_dyn_compatible!(ConfigAndSpan);
 
@@ -415,7 +414,7 @@ pub mod public {
 
         #[test]
         fn simplest_two() -> MacroDeepResult<()> {
-            let span = Literal::from_str("0").unwrap().span();
+            //let span = Literal::from_str("0").unwrap().span();
             let iter = ReadmeBlocksIter::new(
                 // /&span,
                 "01 text\n\
@@ -594,16 +593,19 @@ pub mod public {
     /// Use inside [string_literal_start_end] and similar.
     macro_rules! some_or_fail{
         ( $span:expr, $option_expr:expr, $( $rest:tt)+ ) => {
+            ({
+            use ::proc_macro2_diagnostics::SpanDiagnosticExt as _;
             match $option_expr {
-                Some(value) => value,
-                None => {
-                    return Err($span.clone().error(
+                ::core::option::Option::Some(value) => value,
+                ::core::option::Option::None => {
+                    return ::core::result::Result::Err($span.error(
                         format!(
                             $( $rest )+
                         )
                     ));
                 }
             }
+            })
         };
     }
 
@@ -611,9 +613,9 @@ pub mod public {
     macro_rules! some_or_fail_deep{
         ( $option_expr:expr, $( $rest:tt)+ ) => {
             match $option_expr {
-                Some(value) => value,
-                None => {
-                    return Err(crate::public::DeepDiagnostic::error(
+                ::core::option::Option::Some(value) => value,
+                ::core::option::Option::None => {
+                    return ::core::result::Result::Err($crate::public::DeepDiagnostic::error(
                         format!(
                             $( $rest )+
                         )
@@ -627,13 +629,16 @@ pub mod public {
     #[macro_export]
     macro_rules! true_or_fail{
         ( $span:expr, $bool_expr:expr, $( $rest:tt)+ ) => {
+            ({
+            use ::proc_macro2_diagnostics::SpanDiagnosticExt as _;
             if !$bool_expr {
-                return Err($span.clone().error(
+                return ::core::result::Result::Err($span.error(
                         format!(
                             $( $rest )+
                         )
                     ));
             }
+            })
         };
     }
 
@@ -642,7 +647,7 @@ pub mod public {
     macro_rules! true_or_fail_deep{
         ( $bool_expr:expr, $( $rest:tt)+ ) => {
             if !$bool_expr {
-                return Err(crate::public::DeepDiagnostic::error(
+                return ::core::result::Result::Err($crate::public::DeepDiagnostic::error(
                         format!(
                             $( $rest )+
                         )
@@ -658,16 +663,19 @@ pub mod public {
     #[macro_export]
     macro_rules! ok_or_fail{
         ( $span:expr, $result_expr:expr, $( $rest:tt)+ ) => {
+            ({
+            use ::proc_macro2_diagnostics::SpanDiagnosticExt as _;
             match $result_expr {
-                Ok(value) => value,
-                Err(err) => {
-                    return Err($span.clone().error(
+                ::core::result::Result::Ok(value) => value,
+                ::core::result::Result::Err(err) => {
+                    return ::core::result::Result::Err($span.error(
                         format!(
                             $( $rest )+ , err
                         )
                     ));
                 }
             }
+            })
         };
     }
 
@@ -679,9 +687,9 @@ pub mod public {
     macro_rules! ok_or_fail_deep {
         ( $result_expr:expr, $( $rest:tt)+ ) => {
             match $result_expr {
-                Ok(value) => value,
-                Err(err) => {
-                    return Err(crate::public::DeepDiagnostic::error(
+                ::core::result::Result::Ok(value) => value,
+                ::core::result::Result::Err(err) => {
+                    return ::core::result::Result::Err($crate::public::DeepDiagnostic::error(
                         format!(
                             $( $rest )+ , err
                         )
@@ -794,7 +802,7 @@ pub mod public {
             crate::public::string_literal_content(config_file_path_literal)?;
 
         let span = config_file_path_literal.span();
-        let config_content = load_file(&span, &toml_config_file_path)?;
+        let config_content = load_file(span, &toml_config_file_path)?;
         let config_content = OwnedStringSlice::new_from_whole_string(config_content);
 
         Ok((
@@ -840,7 +848,7 @@ pub mod public {
 
         Ok(crate::private::ConfigAndSpan {
             config,
-            span: &config_content_and_span.span(),
+            span: config_content_and_span.span(),
         })
     }
 
@@ -853,7 +861,7 @@ pub mod public {
     /// (That is, [proc_macro2::Span::local_file] must return [Some].)
     ///
     /// Therefore, this function is tested as a part of `prudent-rs/readme_code_extractor_proc`.
-    fn load_file(span: &Span, file_relative_path: impl AsRef<str>) -> MacroResult<String> {
+    fn load_file(span: Span, file_relative_path: impl AsRef<str>) -> MacroResult<String> {
         let file_relative_path = file_relative_path.as_ref();
 
         let file_full_path = {
@@ -1077,7 +1085,7 @@ pub(crate) mod private {
     #[derive(Debug)]
     pub struct ConfigAndSpan<'a> {
         pub config: Config<'a>,
-        pub span: &'a Span,
+        pub span: Span,
     }
 
     #[derive(Debug)]
@@ -1258,8 +1266,8 @@ mod trait_impls {
         fn config_content(&self) -> &str {
             self.config_content.as_ref()
         }
-        fn span(&self) -> &Span {
-            &self.span
+        fn span(&self) -> Span {
+            self.span
         }
     }
 
@@ -1271,7 +1279,7 @@ mod trait_impls {
         fn config(&self) -> &dyn public::Config {
             &self.config
         }
-        fn span(&self) -> &Span {
+        fn span(&self) -> Span {
             self.span
         }
     }
