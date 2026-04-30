@@ -584,13 +584,16 @@ pub mod public {
     }
 
     /// Use inside [string_literal_start_end] and similar.
+    /// #[macro_export]
     macro_rules! true_or_err{
         ( $span:expr, $bool_expr:expr, $( $rest:tt)+ ) => {
-            some_or_err!(
-                $span,
-                if $bool_expr { Some(()) } else { None },
-                $( $rest )+
-            )
+            if !$bool_expr {
+                return Err($span.clone().error(
+                        format!(
+                            $( $rest )+
+                        )
+                    ));
+            }
         };
     }
 
@@ -598,6 +601,7 @@ pub mod public {
     ///
     /// Pass a formatting string as the first part of the "rest" parameter. The last placeholder
     /// `{}` in the formatting string will be populated with the original error.
+    #[macro_export]
     macro_rules! ok_or_err{
         ( $span:expr, $result_expr:expr, $( $rest:tt)+ ) => {
             match $result_expr {
