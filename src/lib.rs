@@ -584,7 +584,7 @@ pub mod public {
     }
 
     /// Use inside [string_literal_start_end] and similar.
-    /// #[macro_export]
+    #[macro_export]
     macro_rules! true_or_err{
         ( $span:expr, $bool_expr:expr, $( $rest:tt)+ ) => {
             if !$bool_expr {
