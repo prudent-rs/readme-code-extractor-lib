@@ -193,8 +193,6 @@ pub mod public {
     assert_dyn_compatible!(ConfigAndSpan);
 
     pub trait ReadmeLoaded: crate::public::sealed::Trait + Debug {
-        // NOT necessary for data flow, but it makes error reporting easier.
-        //fn span(&self) -> &Span;
         fn markdown_file_content(&self) -> &str;
         fn config(&self) -> &dyn Config;
         /// See [Config::markdown_file_local_path].
@@ -236,7 +234,6 @@ pub mod public {
     /// - not to be `&dyn`-compatible.
     #[derive(Debug)]
     pub struct ReadmeBlocksIter<'a> {
-        //span: &'a Span,
         markdown_content: &'a str,
         pairs: Peekable<CharIndices<'a>>,
 
@@ -259,9 +256,8 @@ pub mod public {
     }
     impl<'a> ReadmeBlocksIter<'a> {
         /// We start parsing in Markdown/text mode.
-        pub(crate) fn new(/*span: &'a Span,*/ markdown_content: &'a str) -> Self {
+        pub(crate) fn new(markdown_content: &'a str) -> Self {
             Self {
-                //span,
                 markdown_content,
                 pairs: markdown_content.char_indices().peekable(),
                 item_start: 0,
@@ -397,14 +393,15 @@ pub mod public {
 
         #[test]
         fn simplest_one() -> MacroResult<()> {
-            let span = Literal::from_str("0").unwrap().span();
             let iter = ReadmeBlocksIter::new(
-                //&span,
                 "01 text\n\
                 02 text",
             );
 
-            let v = iter.collect::<MacroDeepResult<Vec<_>>>().spanned(span)?;
+            let v = {
+                let span = Literal::from_str("0").unwrap().span();
+                iter.collect::<MacroDeepResult<Vec<_>>>().spanned(span)?
+            };
             assert_eq!(v.len(), 1);
 
             assert!(matches!(v[0], ReadmeBlock::Text(_)));
@@ -414,9 +411,7 @@ pub mod public {
 
         #[test]
         fn simplest_two() -> MacroDeepResult<()> {
-            //let span = Literal::from_str("0").unwrap().span();
             let iter = ReadmeBlocksIter::new(
-                // /&span,
                 "01 text\n\
                 ```\n\
                 const _: &str = \"03_code\";\n\
@@ -436,9 +431,7 @@ pub mod public {
 
         #[test]
         fn simplest_three() -> MacroResult<()> {
-            let span = Literal::from_str("0").unwrap().span();
             let iter = ReadmeBlocksIter::new(
-                //&span,
                 "01 text\n\
                 ```\n\
                 const _: () = {};\n\
@@ -446,7 +439,10 @@ pub mod public {
                 text again",
             );
 
-            let v = iter.collect::<MacroDeepResult<Vec<_>>>().spanned(span)?;
+            let v = {
+                let span = Literal::from_str("0").unwrap().span();
+                iter.collect::<MacroDeepResult<Vec<_>>>().spanned(span)?
+            };
             assert_eq!(v.len(), 3);
 
             assert!(matches!(v[0], ReadmeBlock::Text(_)));
@@ -461,17 +457,15 @@ pub mod public {
         }
 
         #[test]
-        fn simplest_empty_preamble_text() -> MacroResult<()> {
-            let span = Literal::from_str("0").unwrap().span();
+        fn simplest_empty_preamble_text() -> MacroDeepResult<()> {
             let iter = ReadmeBlocksIter::new(
-                //&span,
                 "```\n\
                  const _: &str = \"02_code\";\n\
                  ```\n\
                  text",
             );
 
-            let v = iter.collect::<MacroDeepResult<Vec<_>>>().spanned(span)?;
+            let v = iter.collect::<MacroDeepResult<Vec<_>>>()?;
             assert_eq!(v.len(), 3);
 
             assert!(matches!(v[1], ReadmeBlock::Code(_)));
@@ -481,15 +475,16 @@ pub mod public {
 
         #[test]
         fn simplest_code_block_is_last() -> MacroResult<()> {
-            let span = Literal::from_str("0").unwrap().span();
             let iter = ReadmeBlocksIter::new(
-                //&span,
                 "```\n\
                  const _: &str = \"02_code\";\n\
                  ```",
             );
 
-            let v = iter.collect::<MacroDeepResult<Vec<_>>>().spanned(span)?;
+            let v = {
+                let span = Literal::from_str("0").unwrap().span();
+                iter.collect::<MacroDeepResult<Vec<_>>>().spanned(span)?
+            };
             assert_eq!(v.len(), 2);
 
             assert!(matches!(v[1], ReadmeBlock::Code(_)));
@@ -499,9 +494,6 @@ pub mod public {
     }
 
     pub trait ReadmeExtracted<'a>: crate::public::sealed::Trait + Debug {
-        // NOT necessary for data flow, but it makes error reporting easier.
-        //fn span(&self) -> &Span;
-
         /// See [Config::markdown_file_local_path].
         fn markdown_file_local_path(&self) -> &str;
 
@@ -579,12 +571,12 @@ pub mod public {
     /// `to_string()`.
     ///
     /// PANIC is UNLIKELY - it should be only due to an internal error in rustc and/or proc_macro2.
-    pub fn string_literal_content(enclosed_owned: &Literal) -> MacroResult<OwnedStringSlice> {
-        let span = enclosed_owned.span();
-        let enclosed_owned = enclosed_owned.to_string();
-        let (start_incl, end_excl) = string_literal_start_end(&enclosed_owned).spanned(span)?;
+    pub fn string_literal_content(enclosed: &Literal) -> MacroResult<OwnedStringSlice> {
+        let (enclosed_as_string, span) = (enclosed.to_string(), enclosed.span());
+
+        let (start_incl, end_excl) = string_literal_start_end(&enclosed_as_string).spanned(span)?;
         Ok(OwnedStringSlice::new_from_string(
-            enclosed_owned,
+            enclosed_as_string,
             start_incl,
             end_excl,
         ))
@@ -793,7 +785,8 @@ pub mod public {
 
     /// Read configuration from a (TOML) file, its path is given as `config_file_path_literal`.
     ///
-    /// Return impl [ConfigContentAndSpan], and a path to the TOML config file.
+    /// Return impl [MacroResult] of a tuple: [ConfigContentAndSpan], and [OwnedStringSlice] which
+    /// contains a path to the TOML config file.
     #[doc(hidden)]
     pub fn config_content_and_span_by_file(
         config_file_path_literal: &Literal,
@@ -914,10 +907,8 @@ pub mod public {
     pub fn readme_extract<'a>(
         load: &'a impl crate::public::ReadmeLoaded,
     ) -> MacroDeepResult<impl crate::public::ReadmeExtracted<'a>> {
-        let mut all_blocks = crate::public::ReadmeBlocksIter::new(
-            /*load.span(),*/ load.markdown_file_content(),
-        )
-        .peekable();
+        let mut all_blocks =
+            crate::public::ReadmeBlocksIter::new(load.markdown_file_content()).peekable();
 
         let (preamble_text, preamble_code) = if load.config().preamble().is_none() {
             (None, None)
@@ -945,7 +936,6 @@ pub mod public {
 
         //let source_file_full_path = load.source_file_full_path();
         Ok(crate::private::ReadmeExtracted {
-            //span: load.span(),
             markdown_file_local_path: load.markdown_file_local_path(),
             preamble_text,
             preamble_code,
@@ -1090,7 +1080,6 @@ pub(crate) mod private {
 
     #[derive(Debug)]
     pub struct ReadmeLoaded<'a> {
-        //pub span: &'a Span,
         pub markdown_file_content: String,
         pub markdown_file_local_path: &'a str,
         pub config: &'a dyn crate::public::Config,
@@ -1110,7 +1099,6 @@ pub(crate) mod private {
 
     #[derive(Debug)]
     pub struct ReadmeExtracted<'a> {
-        //pub span: &'a Span,
         pub markdown_file_local_path: &'a str,
 
         /// [None] if [crate::public::config::Preamble::is_no_preamble]. But, it may be [None] even
@@ -1289,9 +1277,6 @@ mod trait_impls {
         fn _seal(&self, _: &TraitParam) {}
     }
     impl<'a> crate::public::ReadmeLoaded for crate::private::ReadmeLoaded<'a> {
-        /*fn span(&self) -> &Span {
-            self.span
-        }*/
         fn markdown_file_local_path(&self) -> &str {
             self.markdown_file_local_path
         }
@@ -1347,9 +1332,6 @@ mod trait_impls {
         fn _seal(&self, _: &TraitParam) {}
     }
     impl<'a> crate::public::ReadmeExtracted<'a> for crate::private::ReadmeExtracted<'a> {
-        /*fn span(&self) -> &Span {
-            self.span
-        }*/
         fn markdown_file_local_path(&self) -> &str {
             self.markdown_file_local_path
         }
