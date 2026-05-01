@@ -373,6 +373,19 @@ pub mod public {
         }
     }
 
+    pub mod assert {
+        use crate::public::ext::OptionOrBoolExt;
+        use crate::public::{MacroDeepResult, MacroResult};
+        use proc_macro2::Span;
+
+        pub fn true_or_error<F: Fn() -> String>(b: bool, f: F) -> MacroDeepResult<()> {
+            b.ok_or_error(f)
+        }
+        pub fn true_or_error_for<F: Fn() -> String>(b: bool, f: F, span: Span) -> MacroResult<()> {
+            b.ok_or_error_for(f, span)
+        }
+    }
+
     pub mod sealed {
         /// Intentionally NOT public.
         pub(crate) struct TraitParam;
@@ -833,41 +846,6 @@ pub mod public {
     }
 
     /// Use inside [string_literal_start_end] and similar.
-    macro_rules! some_or_fail{
-        ( $span:expr, $option_expr:expr, $( $rest:tt)+ ) => {
-            ({
-            use ::proc_macro2_diagnostics::SpanDiagnosticExt as _;
-            match $option_expr {
-                ::core::option::Option::Some(value) => value,
-                ::core::option::Option::None => {
-                    return ::core::result::Result::Err($span.error(
-                        format!(
-                            $( $rest )+
-                        )
-                    ));
-                }
-            }
-            })
-        };
-    }
-
-    /// Use inside [string_literal_start_end] and similar.
-    macro_rules! some_or_fail_deep{
-        ( $option_expr:expr, $( $rest:tt)+ ) => {
-            match $option_expr {
-                ::core::option::Option::Some(value) => value,
-                ::core::option::Option::None => {
-                    return ::core::result::Result::Err($crate::public::DeepDiagnostic::error(
-                        format!(
-                            $( $rest )+
-                        )
-                    ));
-                }
-            }
-        };
-    }
-
-    /// Use inside [string_literal_start_end] and similar.
     #[macro_export]
     macro_rules! true_or_fail{
         ( $span:expr, $bool_expr:expr, $( $rest:tt)+ ) => {
@@ -899,32 +877,30 @@ pub mod public {
     }
 
     pub fn string_literal_start_end(enclosed: &str) -> MacroDeepResult<(usize, usize)> {
-        (enclosed.len() > 2).ok_or_error(|| {
+        assert::true_or_error(enclosed.len() > 2, || {
             format!(
                 "expecting an enclosed string literal (at least two bytes), but received: {}",
                 enclosed
             )
         })?;
-
         let mut chars = enclosed.chars();
-        let first = some_or_fail_deep! {
-            chars.next(),
-            "Can't parse the first character of: {enclosed}"
-
-        };
+        let first = chars
+            .next()
+            .ok_or_error(|| format!("Can't parse the first character of: {enclosed}"))?;
 
         if first == '"' || first == 'r' {
             if first == '"' {
                 // ordinary "string literals"
-                let last = some_or_fail_deep!(
-                    chars.next_back(),
-                    "Can't parse the last character of: {enclosed}"
-                );
+                let last = chars
+                    .next_back()
+                    .ok_or_error(|| format!("Can't parse the last character of: {enclosed}"))?;
 
-                true_or_fail_deep!(
-                    last == '"',
-                    "Expecting the last character to be a closing quote '\"', but it's: '{last}'."
-                );
+                assert::true_or_error(last == '"', || {
+                    format!(
+                        "Expecting the last character to be a closing quote '\"', but it's: '{last}'."
+                    )
+                })?;
+
                 Ok((1, enclosed.len() - 1))
             } else {
                 // raw string literals
@@ -943,33 +919,37 @@ pub mod public {
                     }
                 }
                 for _ in 0..num_of_hashes {
-                    let c = some_or_fail_deep!(
-                        chars.next_back(),
-                        "Expecting a raw string literal, but it seems not closed. \
+                    let c = chars.next_back().ok_or_error(|| {
+                        format!(
+                            "Expecting a raw string literal, but it seems not closed. \
                                 Expecting a hash character '#' near the end, but out of \
                                 characters. Whole literal: {enclosed}"
-                    );
-                    true_or_fail_deep!(
-                        c == '#',
-                        "Expecting a raw string literal, but it seems not \
+                        )
+                    })?;
+                    assert::true_or_error(c == '#', || {
+                        format!(
+                            "Expecting a raw string literal, but it seems not \
                             closed. Surprised by character '{c}' near the end. \
                             Whole literal: {enclosed}"
-                    );
+                        )
+                    })?;
                 }
-                let c = some_or_fail_deep!(
-                    chars.next_back(),
-                    "Expecting a raw string literal, but it \
+                let c = chars.next_back().ok_or_error(|| {
+                    format!(
+                        "Expecting a raw string literal, but it \
                             seems not closed. \
                             Expecting a quote character '\"' near the end, but out of \
                             characters. Whole literal: {enclosed}"
-                );
-                true_or_fail_deep!(
-                    c == '"',
-                    "Internal or unexpected error: Expecting a raw string literal, but it \
+                    )
+                })?;
+                assert::true_or_error(c == '"', || {
+                    format!(
+                        "Internal or unexpected error: Expecting a raw string literal, but it \
                             seems not closed. \
                             Expecting a quote character '\"' near the end, but \
                             received '{c}' character instead. Whole literal: {enclosed}"
-                );
+                    )
+                })?;
 
                 Ok((2 + num_of_hashes, enclosed.len() - 1 - num_of_hashes))
             }
@@ -1051,22 +1031,28 @@ pub mod public {
         let file_relative_path = file_relative_path.as_ref();
 
         let file_full_path = {
-            let invoker_file_path = some_or_fail! {
-                span,
-                span.local_file(),
-                    "Rust source file that invoked readme_code_extractor_lib::load_file(...) \
+            let invoker_file_path = span.local_file().ok_or_error_for(
+                || {
+                    format!(
+                        "Rust source file that invoked readme_code_extractor_lib::load_file(...) \
                     (through one of readme_code_extractor's macros like all, all_by_file, nth, \
                     nth_by_file) for file with relative path {file_relative_path} \
                     should have a known location."
-            };
-            let invoker_parent_dir = some_or_fail!(
+                    )
+                },
                 span,
-                invoker_file_path.parent(),
-                "Rust source file that invoked readme_code_extractor_lib::load_file(...) \
+            )?;
+            let invoker_parent_dir = invoker_file_path.parent().ok_or_error_for(
+                || {
+                    format!(
+                        "Rust source file that invoked readme_code_extractor_lib::load_file(...) \
                     (through one of readme_code_extractor's macros like all, all_by_file, nth, \
                     nth_by_file) for file with relative path {file_relative_path} \
                     may exist, but we can't get its parent directory."
-            );
+                    )
+                },
+                span,
+            )?;
             invoker_parent_dir.join(file_relative_path)
         };
 
