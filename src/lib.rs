@@ -63,7 +63,6 @@ pub mod public {
     use core::iter::Peekable;
     use core::str::CharIndices;
     use proc_macro2::{Literal, Span};
-    use std::collections::HashSet;
 
     use proc_macro2_diagnostics::Diagnostic;
 
@@ -140,25 +139,12 @@ pub mod public {
         }
         assert_dyn_compatible!(Preamble);
 
-        pub mod headers {
-            pub trait Tags: crate::public::sealed::Trait {
-                /// Unique tags - if any, then it's exactly one tag per code block.
-                ///
-                /// - NOT returning `impl Iterator<Item = &'a str>`, because then this trait would
-                ///   NOT be dyn-compatible.
-                /// - A slice is more flexible/useable than an [Iterator]. And it knows its length.
-                fn tags(&self) -> &[&str];
-
-                fn after_tag(&self) -> &str;
-            }
-            assert_dyn_compatible!(Tags);
+        pub trait CodeHeaders: crate::public::sealed::Trait {
+            fn top_prefix(&self) -> &str;
+            fn tag_suffix(&self) -> &str;
+            fn end_suffix(&self) -> &str;
         }
-
-        pub trait Headers: crate::public::sealed::Trait {
-            fn prefix_before_tag(&self) -> &str;
-            fn tags(&self) -> Option<&dyn headers::Tags>;
-        }
-        assert_dyn_compatible!(Headers);
+        assert_dyn_compatible!(CodeHeaders);
     }
 
     pub trait Config: crate::public::sealed::Trait + Debug {
@@ -170,11 +156,7 @@ pub mod public {
         fn start_prefix(&self) -> &str;
         fn preamble(&self) -> &dyn config::Preamble;
 
-        // code_block_top_prefix
-        // code_block_tag_suffix
-        // code_block_end_suffix
-        fn ordinary_code_headers(&self) -> Option<&dyn config::Headers>;
-        fn ordinary_code_suffix(&self) -> &str;
+        fn code_headers(&self) -> &dyn config::CodeHeaders;
 
         fn final_suffix(&self) -> &str;
     }
@@ -563,7 +545,7 @@ pub mod public {
     ///   special characters) are escaped.
     /// - simply
     ///   - if the string literal starts with a quote '"', remove the leading and trailing quotation
-    ///     tags (or, actually, slice it).
+    ///     marks (or, actually, slice it).
     ///   - if the string literal starts with `r", r#", r##", r###"` etc., remove that and the
     ///     appropriate trailing group `", "#, "xx, "xxx` etc. (actually, slice it).
     ///
@@ -822,23 +804,6 @@ pub mod public {
             config_content_and_span.config_content()
         );
 
-        if let Some(headers) = config.ordinary_code_headers()
-            && let Some(tags) = headers.tags()
-        {
-            let tags = tags.tags();
-            if tags.len() > 0 {
-                let mut set = HashSet::<&str>::with_capacity(tags.len());
-                set.extend(tags.iter());
-                true_or_fail!(
-                    config_content_and_span.span(),
-                    set.len() == tags.len(),
-                    "Since tags were given, they must be unique! However, there are {} tags, but only {} unique subsets of them.",
-                    tags.len(),
-                    set.len()
-                )
-            }
-        }
-
         Ok(crate::private::ConfigAndSpan {
             config,
             span: config_content_and_span.span(),
@@ -992,44 +957,16 @@ pub(crate) mod private {
             Prefixed(&'a str),
         }
 
-        pub mod headers {
-            use alloc::vec::Vec;
-            use serde::{Deserialize, Serialize};
-
-            #[derive(Serialize, Deserialize, Debug)]
-            #[serde(default)]
-            pub struct Tags<'a> {
-                /// A list of strings to be injected after the injected
-                /// [crate::private::config::Headers::prefix_before_tag], and before the
-                /// beginning of the existing code of each non-preamble code block.
-                ///
-                /// Each string from this list is to be used exactly once, one per each non-preamble
-                /// code block. The number of strings in this list has to be the same as the number
-                /// of non-preamble code blocks.
-                ///
-                /// Example of useful tags: Names of test functions (or parts of such names) to
-                /// generate, one per each non-preamble code block.
-                pub tags: Vec<&'a str>,
-
-                /// Content to be injected at the beginning of each non-preamble code block, but
-                /// AFTER a tag.
-                ///
-                /// Example of useful content of a tag when generating test functions: `() {`.
-                pub after_tag: &'a str,
-            }
-        }
-
         #[derive(Serialize, Deserialize, Debug)]
         #[serde(default)]
-        pub struct Headers<'a> {
+        pub struct CodeHeaders<'a> {
             /// Prefix to be injected at the beginning of any non-preamble code block, even before
-            /// an tag (if any).
+            /// a tag (if any).
             ///
             /// Example of useful prefix: `#[test] fn test_` for test functions to generate.
-            pub prefix_before_tag: &'a str,
-
-            #[serde(borrow)]
-            pub tags: Option<headers::Tags<'a>>,
+            pub top_prefix: &'a str,
+            pub tag_suffix: &'a str,
+            pub end_suffix: &'a str,
         }
     }
 
@@ -1048,8 +985,8 @@ pub(crate) mod private {
         #[serde(borrow)]
         pub preamble: config::Preamble<'a>,
 
-        #[serde(borrow, default = "default_config_ordinary_code_headers")]
-        pub ordinary_code_headers: Option<config::Headers<'a>>,
+        #[serde(borrow)]
+        pub code_headers: config::CodeHeaders<'a>,
 
         /// Suffix to be appended at the end of any non-preamble code block.
         ///
@@ -1060,9 +997,6 @@ pub(crate) mod private {
     }
     pub fn default_markdown_file_path() -> &'static str {
         "README.md"
-    }
-    pub fn default_config_ordinary_code_headers<'a>() -> Option<config::Headers<'a>> {
-        None
     }
     // -----
 
@@ -1151,53 +1085,29 @@ mod trait_impls {
         }
     }
 
-    impl<'a> Trait for crate::private::config::headers::Tags<'a> {
+    impl<'a> Trait for crate::private::config::CodeHeaders<'a> {
         #[allow(private_interfaces)]
         fn _seal(&self, _: &TraitParam) {}
     }
-    impl<'a> Default for crate::private::config::headers::Tags<'a> {
+    impl<'a> Default for crate::private::config::CodeHeaders<'a> {
         fn default() -> Self {
             Self {
-                tags: vec![],
-                after_tag: "",
-            }
-        }
-    }
-    impl<'a> crate::public::config::headers::Tags for crate::private::config::headers::Tags<'a> {
-        fn tags(&self) -> &[&str] {
-            &self.tags
-        }
-        fn after_tag(&self) -> &str {
-            &self.after_tag
-        }
-    }
-
-    impl<'a> Trait for crate::private::config::Headers<'a> {
-        #[allow(private_interfaces)]
-        fn _seal(&self, _: &TraitParam) {}
-    }
-    impl<'a> Default for crate::private::config::Headers<'a> {
-        fn default() -> Self {
-            if true {
-                unreachable!("If this dies, then we don't need default_code_headers")
-            }
-            Self {
-                prefix_before_tag: "",
-                tags: None,
+                top_prefix: "",
+                tag_suffix: "",
+                end_suffix: "",
             }
         }
     }
 
-    impl<'a> crate::public::config::Headers for crate::private::config::Headers<'a> {
-        fn prefix_before_tag(&self) -> &str {
-            &self.prefix_before_tag
+    impl<'a> crate::public::config::CodeHeaders for crate::private::config::CodeHeaders<'a> {
+        fn top_prefix(&self) -> &str {
+            self.top_prefix
         }
-        fn tags(&self) -> Option<&dyn crate::public::config::headers::Tags> {
-            if let Some(tags) = &self.tags {
-                Some(tags)
-            } else {
-                None
-            }
+        fn tag_suffix(&self) -> &str {
+            self.tag_suffix
+        }
+        fn end_suffix(&self) -> &str {
+            self.end_suffix
         }
     }
 
@@ -1213,7 +1123,8 @@ mod trait_impls {
                 start_prefix: "",
                 preamble: crate::private::config::Preamble::None,
 
-                ordinary_code_headers: crate::private::default_config_ordinary_code_headers(),
+                //code_headers: crate::private::default_config_code_headers(),
+                code_headers: Default::default(),
                 ordinary_code_suffix: "",
 
                 final_suffix: "",
@@ -1230,15 +1141,8 @@ mod trait_impls {
         fn preamble(&self) -> &dyn crate::public::config::Preamble {
             &self.preamble
         }
-        fn ordinary_code_headers(&self) -> Option<&dyn crate::public::config::Headers> {
-            if let Some(headers) = &self.ordinary_code_headers {
-                Some(headers)
-            } else {
-                None
-            }
-        }
-        fn ordinary_code_suffix(&self) -> &str {
-            self.ordinary_code_suffix
+        fn code_headers(&self) -> &dyn crate::public::config::CodeHeaders {
+            &self.code_headers
         }
         fn final_suffix(&self) -> &str {
             self.final_suffix
