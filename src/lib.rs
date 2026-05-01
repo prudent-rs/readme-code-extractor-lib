@@ -440,6 +440,17 @@ pub mod public {
         fn code_headers(&self) -> &dyn config::CodeHeaders;
 
         fn final_suffix(&self) -> &str;
+
+        /// Pass through a "tag:" values (if any) out of the triple backtick suffix (if any).
+        /// `false` by default (to simplify the simplest use cases).
+        ///
+        /// Caveat: Independent/NOT related to filtering by tag value:
+        /// - Setting this to `true` does NOT indicate whether code blocks are filtered by tag value
+        ///   or not.
+        /// - Code blocks CAN be filtered by tag value even if [Self::pass_through_tag] is `false`.
+        /// Filtering is determined by the actual proc macro invoked (out of
+        /// `readme-code-extractor-proc`).
+        fn pass_through_tags(&self) -> bool;
     }
     assert_dyn_compatible!(Config);
     // ----
@@ -1208,6 +1219,7 @@ pub(crate) mod private {
         pub ordinary_code_suffix: &'a str,
 
         pub final_suffix: &'a str,
+        pub pass_through_tags: bool,
     }
     pub fn default_markdown_file_path() -> &'static str {
         "README.md"
@@ -1344,6 +1356,7 @@ mod trait_impls {
                 ordinary_code_suffix: "",
 
                 final_suffix: "",
+                pass_through_tags: false,
             }
         }
     }
@@ -1362,6 +1375,9 @@ mod trait_impls {
         }
         fn final_suffix(&self) -> &str {
             self.final_suffix
+        }
+        fn pass_through_tags(&self) -> bool {
+            self.pass_through_tags
         }
     }
     //-----
