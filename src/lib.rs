@@ -1029,22 +1029,15 @@ pub mod public {
         let config =
             toml::from_str::<crate::private::Config>(config_content_and_span.config_content());
 
-        /*if false {
-        let config = config.map_error_dbg_for(span)
+        let config = config.map_error_dbg_with_for(
+            || {
+                format!(
+                    "Can't parse literal's content as an expected TOML config. Content: {}",
+                    config_content_and_span.config_content()
+                )
+            },
             config_content_and_span.span(),
-            config,
-            "Couldn't parse given literal's content as an expected TOML config. Content: \
-                    {}\nError:\n{:?}",
-            config_content_and_span.config_content()
-        );
-        }*/
-        let config = ok_or_fail!(
-            config_content_and_span.span(),
-            config,
-            "Couldn't parse given literal's content as an expected TOML config. Content: \
-                    {}\nError:\n{:?}",
-            config_content_and_span.config_content()
-        );
+        )?;
 
         Ok(crate::private::ConfigAndSpan {
             config,
@@ -1086,14 +1079,17 @@ pub mod public {
 
         // Error handling is modelling https://doc.rust-lang.org/nightly/src/core/result.rs.html
         // > `fn unwrap_failed`, which invokes `panic!("{msg}: {error:?}");`
-        let content = ok_or_fail!(
+        let content = std::fs::read_to_string(&file_full_path).map_error_dbg_with_for(
+            || {
+                format!(
+                    "expecting a file {}, but opening it failed",
+                    file_full_path
+                        .to_str()
+                        .unwrap_or("(PATH UNKNOWN OR NOT UTF-8)")
+                )
+            },
             span,
-            std::fs::read_to_string(&file_full_path),
-            "Expecting a file {}, but opening it failed: {:?}",
-            file_full_path
-                .to_str()
-                .unwrap_or("(PATH UNKNOWN OR NOT UTF-8)")
-        );
+        )?;
         Ok(content)
     }
 
