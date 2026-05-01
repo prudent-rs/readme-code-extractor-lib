@@ -108,7 +108,7 @@ pub mod public {
 
     pub mod sealed {
         /// Intentionally NOT public.
-        pub(crate) struct TraitParam {}
+        pub(crate) struct TraitParam;
         pub trait Trait {
             #[allow(private_interfaces)]
             fn _seal(&self, _: &TraitParam);
@@ -164,12 +164,15 @@ pub mod public {
     pub trait Config: crate::public::sealed::Trait + Debug {
         /// Markdown file path, relative to where the relevant readme_code_extractor's macro is
         /// being used.
-        fn markdown_file_local_path(&self) -> &str;
+        fn markdown_file_path(&self) -> &str;
 
         /// Before preamble (and it applies even if [config::Preamble::is_none]).
         fn start_prefix(&self) -> &str;
         fn preamble(&self) -> &dyn config::Preamble;
 
+        // code_block_top_prefix
+        // code_block_tag_suffix
+        // code_block_end_suffix
         fn ordinary_code_headers(&self) -> Option<&dyn config::Headers>;
         fn ordinary_code_suffix(&self) -> &str;
 
@@ -192,8 +195,8 @@ pub mod public {
     pub trait ReadmeLoaded: crate::public::sealed::Trait + Debug {
         fn markdown_file_content(&self) -> &str;
         fn config(&self) -> &dyn Config;
-        /// See [Config::markdown_file_local_path].
-        fn markdown_file_local_path(&self) -> &str;
+        /// See [Config::markdown_file_path].
+        fn markdown_file_path(&self) -> &str;
     }
     assert_dyn_compatible!(ReadmeLoaded);
 
@@ -491,8 +494,8 @@ pub mod public {
     }
 
     pub trait ReadmeExtracted<'a>: crate::public::sealed::Trait + Debug {
-        /// See [Config::markdown_file_local_path].
-        fn markdown_file_local_path(&self) -> &str;
+        /// See [Config::markdown_file_path].
+        fn markdown_file_path(&self) -> &str;
 
         /// Content of the first text block, if any, but only if we do expect a preamble, that is,
         /// if [crate::public::config::Preamble::is_no_preamble] returns `false`.
@@ -889,12 +892,12 @@ pub mod public {
 
     #[doc(hidden)]
     pub fn readme_load(config_and_span: &impl ConfigAndSpan) -> MacroResult<impl ReadmeLoaded> {
-        let markdown_file_local_path = config_and_span.config().markdown_file_local_path();
+        let markdown_file_path = config_and_span.config().markdown_file_path();
         let span = config_and_span.span();
-        let markdown_file_content = load_file(span, markdown_file_local_path)?;
+        let markdown_file_content = load_file(span, markdown_file_path)?;
         Ok(crate::private::ReadmeLoaded {
             //span,
-            markdown_file_local_path,
+            markdown_file_path,
             markdown_file_content,
             config: config_and_span.config(),
         })
@@ -933,7 +936,7 @@ pub mod public {
 
         //let source_file_full_path = load.source_file_full_path();
         Ok(crate::private::ReadmeExtracted {
-            markdown_file_local_path: load.markdown_file_local_path(),
+            markdown_file_path: load.markdown_file_path(),
             preamble_text,
             preamble_code,
             non_preamble_blocks: all_blocks,
@@ -1036,8 +1039,8 @@ pub(crate) mod private {
     pub struct Config<'a> {
         /// **Relative** path (relative to the directory of Rust source file that invoked the chain
         /// of macros). Defaults to "README.md".
-        #[serde(default = "default_markdown_file_local_path")]
-        pub markdown_file_local_path: &'a str,
+        #[serde(default = "default_markdown_file_path")]
+        pub markdown_file_path: &'a str,
         /// @TODO Document (here, and in TOML examples) that prefix_before_preamble
         /// CAN be set & used even IF preamble is set to [config::Preamble::None].
         pub start_prefix: &'a str,
@@ -1055,7 +1058,7 @@ pub(crate) mod private {
 
         pub final_suffix: &'a str,
     }
-    pub fn default_markdown_file_local_path() -> &'static str {
+    pub fn default_markdown_file_path() -> &'static str {
         "README.md"
     }
     pub fn default_config_ordinary_code_headers<'a>() -> Option<config::Headers<'a>> {
@@ -1078,7 +1081,7 @@ pub(crate) mod private {
     #[derive(Debug)]
     pub struct ReadmeLoaded<'a> {
         pub markdown_file_content: String,
-        pub markdown_file_local_path: &'a str,
+        pub markdown_file_path: &'a str,
         pub config: &'a dyn crate::public::Config,
     }
 
@@ -1096,7 +1099,7 @@ pub(crate) mod private {
 
     #[derive(Debug)]
     pub struct ReadmeExtracted<'a> {
-        pub markdown_file_local_path: &'a str,
+        pub markdown_file_path: &'a str,
 
         /// [None] if [crate::public::config::Preamble::is_no_preamble]. But, it may be [None] even
         /// for configurations where preamble is configured. For example: early end of input, or no
@@ -1205,7 +1208,7 @@ mod trait_impls {
     impl<'a> Default for crate::private::Config<'a> {
         fn default() -> Self {
             Self {
-                markdown_file_local_path: crate::private::default_markdown_file_local_path(),
+                markdown_file_path: crate::private::default_markdown_file_path(),
 
                 start_prefix: "",
                 preamble: crate::private::config::Preamble::None,
@@ -1218,8 +1221,8 @@ mod trait_impls {
         }
     }
     impl<'a> crate::public::Config for crate::private::Config<'a> {
-        fn markdown_file_local_path(&self) -> &str {
-            self.markdown_file_local_path
+        fn markdown_file_path(&self) -> &str {
+            self.markdown_file_path
         }
         fn start_prefix(&self) -> &str {
             self.start_prefix
@@ -1274,8 +1277,8 @@ mod trait_impls {
         fn _seal(&self, _: &TraitParam) {}
     }
     impl<'a> crate::public::ReadmeLoaded for crate::private::ReadmeLoaded<'a> {
-        fn markdown_file_local_path(&self) -> &str {
-            self.markdown_file_local_path
+        fn markdown_file_path(&self) -> &str {
+            self.markdown_file_path
         }
         fn markdown_file_content(&self) -> &str {
             &self.markdown_file_content
@@ -1329,8 +1332,8 @@ mod trait_impls {
         fn _seal(&self, _: &TraitParam) {}
     }
     impl<'a> crate::public::ReadmeExtracted<'a> for crate::private::ReadmeExtracted<'a> {
-        fn markdown_file_local_path(&self) -> &str {
-            self.markdown_file_local_path
+        fn markdown_file_path(&self) -> &str {
+            self.markdown_file_path
         }
         fn preamble_text(&self) -> Option<&dyn crate::public::ReadmeBlock> {
             match &self.preamble_text {
