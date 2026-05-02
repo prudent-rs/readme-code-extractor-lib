@@ -817,6 +817,21 @@ pub mod public {
                 format!("{r:?}").contains("last code block is not enclosed with three backticks")
             );
         }
+
+        #[test]
+        fn simple_tagged() {
+            let r = {
+                let iter = ReadmeBlocksIter::new(
+                    "```rust,tag:01\n\
+                     ```\n\
+                    ",
+                );
+                let span = Literal::from_str("0").unwrap().span();
+                iter.collect::<MacroDeepResult<Vec<_>>>().spanned(span)
+            };
+            assert!(r.is_ok());
+            assert_eq!(r.unwrap()[1].code().unwrap().tag(), Some("01"));
+        }
     }
 
     pub trait ReadmeExtracted<'a>: crate::public::sealed::Trait + Debug {
