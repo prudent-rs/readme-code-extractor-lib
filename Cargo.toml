@@ -11,7 +11,7 @@ license = "BSD-2-Clause OR Apache-2.0 OR MIT"
 authors = ["Peter Lyons Kehl<peter.kehl@gmail.com>"]
 description = "Markdown Code Extractor library (part of mce): Collect code blocks from your README.md (or another Markdown file). Optional filtering. Add optional prefix and suffix to each code block, as well as the overall output. Example: use with no-panic"
 
-categories = ["development-tools", "development-tools::testing", "rust-patterns"]
+categories = ["development-tools", "development-tools::testing", "no-std", "rust-patterns"]
 
 keywords = ["extract", "readme", "macro", "macros", "panic"]
 
@@ -26,3 +26,6 @@ proc-macro2-diagnostics = "0.10.1"
 
 [features]
 std = []
+
+[package.metadata.docs.rs]
+default-target = "x86_64-unknown-linux-gnu"

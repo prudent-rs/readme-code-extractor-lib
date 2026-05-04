@@ -104,8 +104,8 @@ pub mod public {
 
             fn into_error_for(self, span: Span) -> Diagnostic;
             fn into_error_with_for<F: Fn() -> String>(self, f: F, span: Span) -> Diagnostic;
-            // Sealing is not really necessary, because we have a blanket impl that covers any and all
-            // eligible types, so no other types can implement this trait.
+            // Sealing is not really necessary, because we have a blanket impl that covers any and
+            // all eligible types, so no other types can implement this trait.
             #[allow(private_interfaces)]
             fn _seal(&self, _: &sealed::TraitParam);
         }
@@ -401,15 +401,15 @@ pub mod public {
 
         pub trait CodeHeaders: crate::public::sealed::Trait {
             /// Prefix to be injected at the beginning of any non-preamble code block, even before a
-            /// tag (if any). Injected REGARDLESS of whether there is a tag or no tag (that is, the
-            /// tag is empty).
+            /// mce_tag (if any). Injected REGARDLESS of whether there is a mce_tag or no mce_tag
+            /// (that is, the mce_tag is empty).
             ///
             /// Example of useful prefix: `#[test] fn test_` for test functions to generate.
             fn top_prefix(&self) -> &str;
             /// Suffix to be appended (still before the beginning of any non-preamble code block),
-            /// after a tag (if any). Appended REGARDLESS of whether there is a tag or no tag (that
-            /// is, the tag is empty).
-            fn tag_suffix(&self) -> &str;
+            /// after a mce_tag (if any). Appended REGARDLESS of whether there is a mce_tag or no
+            /// mce_tag (that is, the mce_tag is empty).
+            fn mce_tag_suffix(&self) -> &str;
             /// Suffix to be appended after any non-preamble code block.
             fn end_suffix(&self) -> &str;
         }
@@ -417,8 +417,7 @@ pub mod public {
     }
 
     pub trait Config: crate::public::sealed::Trait + Debug {
-        /// Markdown file path, relative to where the relevant mce's macro is
-        /// being used.
+        /// Markdown file path, relative to where the relevant mce's macro is being used.
         fn markdown_file_path(&self) -> &str;
 
         /// Before preamble (and it applies even if [config::Preamble::is_none]).
@@ -429,16 +428,16 @@ pub mod public {
 
         fn final_suffix(&self) -> &str;
 
-        /// Pass through a "tag:" values (if any) out of the triple backtick suffix (if any).
+        /// Pass through a "mce_tag:" values (if any) out of the triple backtick suffix (if any).
         /// `false` by default (to simplify the simplest use cases).
         ///
-        /// Caveat: Independent/NOT related to filtering by tag value:
-        /// - Setting this to `true` does NOT indicate whether code blocks are filtered by tag value
-        ///   or not.
-        /// - Code blocks CAN be filtered by tag value even if [Self::pass_through_tag] is `false`.
+        /// Caveat: Independent/NOT related to filtering by mce_tag value:
+        /// - Setting this to `true` does NOT indicate whether code blocks are filtered by mce_tag
+        ///   value or not.
+        /// - Code blocks CAN be filtered by mce_tag value even if [Self::pass_through_mce_tag] is
+        ///   `false`.
         ///
-        /// Filtering is determined by the actual proc macro invoked (out of
-        /// `mce-proc`).
+        /// Filtering is determined by the actual proc macro invoked (out of `mce-proc`).
         fn pass_through_tags(&self) -> bool;
     }
     assert_dyn_compatible!(Config);
@@ -478,8 +477,8 @@ pub mod public {
 
         fn triple_backtick_suffix_parts(&self) -> &[&str];
 
-        /// The part right of "tag:" out of [Self::triple_backtick_suffix_parts] (if any).
-        fn tag(&self) -> Option<&str>;
+        /// The part right of "mce_tag:" out of [Self::triple_backtick_suffix_parts] (if any).
+        fn mce_tag(&self) -> Option<&str>;
 
         fn code(&self) -> &str;
     }
@@ -618,15 +617,15 @@ pub mod public {
                         let triple_backtick_suffix_parts =
                             triple_backtick_suffix.split(',').collect::<Vec<_>>();
 
-                        let tag = triple_backtick_suffix_parts.iter().find_map(|part| {
-                            let s = part.split_once("tag:");
-                            s.map(|(_, tag_value)| tag_value)
+                        let mce_tag = triple_backtick_suffix_parts.iter().find_map(|part| {
+                            let s = part.split_once("mce_tag:");
+                            s.map(|(_, mce_tag_value)| mce_tag_value)
                         });
 
                         crate::private::ReadmeBlock::Code(crate::private::CodeBlock {
                             triple_backtick_suffix,
                             triple_backtick_suffix_parts,
-                            tag,
+                            mce_tag,
                             code: &self.markdown_content
                                 [code_triple_backtick_suffix_end..next_block_start - 3],
                         })
@@ -801,7 +800,7 @@ pub mod public {
         fn simple_tagged() {
             let r = {
                 let iter = ReadmeBlocksIter::new(
-                    "```rust,tag:01\n\
+                    "```rust,mce_tag:01\n\
                      ```\n\
                     ",
                 );
@@ -809,7 +808,7 @@ pub mod public {
                 iter.collect::<MacroDeepResult<Vec<_>>>().spanned(span)
             };
             assert!(r.is_ok());
-            assert_eq!(r.unwrap()[1].code().unwrap().tag(), Some("01"));
+            assert_eq!(r.unwrap()[1].code().unwrap().mce_tag(), Some("01"));
         }
     }
 
@@ -1052,9 +1051,9 @@ pub mod public {
     ///
     /// Return content of the file.
     ///
-    /// This function is NOT testable here, because it requires a literal that has [proc_macro2::Span]
-    /// (as returned by [proc_macro2::Literal::span]) that comes from a real file and not from a test.
-    /// (That is, [proc_macro2::Span::local_file] must return [Some].)
+    /// This function is NOT testable here, because it requires a literal that has
+    /// [proc_macro2::Span] (as returned by [proc_macro2::Literal::span]) that comes from a real
+    /// file and not from a test. (That is, [proc_macro2::Span::local_file] must return [Some].)
     ///
     /// Therefore, this function is tested as a part of `prudent-rs/mce_proc`.
     fn load_file(span: Span, file_relative_path: impl AsRef<str>) -> MacroResult<String> {
@@ -1211,7 +1210,7 @@ pub(crate) mod private {
         #[serde(default)]
         pub struct CodeHeaders<'a> {
             pub top_prefix: &'a str,
-            pub tag_suffix: &'a str,
+            pub mce_tag_suffix: &'a str,
             pub end_suffix: &'a str,
         }
     }
@@ -1224,8 +1223,8 @@ pub(crate) mod private {
         /// of macros). Defaults to "README.md".
         #[serde(default = "default_markdown_file_path")]
         pub markdown_file_path: &'a str,
-        /// @TODO Document (here, and in TOML examples) that prefix_before_preamble
-        /// CAN be set & used even IF preamble is set to [config::Preamble::None].
+        /// @TODO Document (here, and in TOML examples) that prefix_before_preamble CAN be set &
+        /// used even IF preamble is set to [config::Preamble::None].
         pub start_prefix: &'a str,
 
         #[serde(borrow)]
@@ -1271,7 +1270,7 @@ pub(crate) mod private {
     pub struct CodeBlock<'a> {
         pub triple_backtick_suffix: &'a str,
         pub triple_backtick_suffix_parts: Vec<&'a str>,
-        pub tag: Option<&'a str>,
+        pub mce_tag: Option<&'a str>,
         pub code: &'a str,
     }
 
@@ -1344,8 +1343,8 @@ mod trait_impls {
         fn top_prefix(&self) -> &str {
             self.top_prefix
         }
-        fn tag_suffix(&self) -> &str {
-            self.tag_suffix
+        fn mce_tag_suffix(&self) -> &str {
+            self.mce_tag_suffix
         }
         fn end_suffix(&self) -> &str {
             self.end_suffix
@@ -1450,8 +1449,8 @@ mod trait_impls {
         fn triple_backtick_suffix_parts(&self) -> &[&str] {
             &self.triple_backtick_suffix_parts
         }
-        fn tag(&self) -> Option<&str> {
-            self.tag
+        fn mce_tag(&self) -> Option<&str> {
+            self.mce_tag
         }
         fn code(&self) -> &str {
             self.code
@@ -1512,8 +1511,8 @@ mod trait_impls {
 }
 
 // ------
-/// Internal, used between crates `mce-lib` and `mce-proc` and
-/// `mce` to assure that they're of the same version.
+/// Internal, used between crates `mce-lib` and `mce-proc` and `mce` to assure that they're of the
+/// same version.
 pub const fn is_exact_version(expected_version: &'static str) -> bool {
     matches!(expected_version.as_bytes(), b"0.0.1")
 }
