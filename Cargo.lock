@@ -3,12 +3,20 @@
 version = 4
 
 [[package]]
-name = "mce-lib"
+name = "dis"
 version = "0.0.1"
 dependencies = [
  "proc-macro2",
  "proc-macro2-diagnostics",
- "proc-macro2-diagnostics-more",
+]
+
+[[package]]
+name = "mce-lib"
+version = "0.0.1"
+dependencies = [
+ "dis",
+ "proc-macro2",
+ "proc-macro2-diagnostics",
  "serde",
  "toml",
 ]
@@ -33,14 +41,6 @@ dependencies = [
  "syn",
  "version_check",
  "yansi",
-]
-
-[[package]]
-name = "proc-macro2-diagnostics-more"
-version = "0.0.1"
-dependencies = [
- "proc-macro2",
- "proc-macro2-diagnostics",
 ]
 
 [[package]]

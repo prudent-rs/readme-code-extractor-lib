@@ -23,7 +23,7 @@ proc-macro2 = {version="1.0.60", features=["span-locations"] }
 serde = { version = "1.0.113", features = ["derive"] }
 toml = { version = "1.0.0", default-features = false, features = ["parse", "serde"] }
 proc-macro2-diagnostics = "0.10.1"
-proc-macro2-diagnostics-more = { version = "0.0.1", path = "../proc-macro2-diagnostics-more", features = ["alloc", "proc-macro2-diagnostics"]}
+dis = { version = "0.0.1", path = "../dis", features = ["proc-macro2-diagnostics"]}
 
 [features]
 std = []

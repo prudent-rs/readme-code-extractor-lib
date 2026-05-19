@@ -41,10 +41,10 @@ pub mod public {
     use core::fmt::Debug;
     use core::iter::Peekable;
     use core::str::CharIndices;
+    use dis::assert;
+    use dis::prelude_ext::{core::*, proc_macro2_diagnostics::*};
+    use dis::{Displayish, MacroDeepResult, MacroDiagnosticResult};
     use proc_macro2::{Literal, Span};
-    use proc_macro2_diagnostics_more::assert;
-    use proc_macro2_diagnostics_more::ext::*;
-    use proc_macro2_diagnostics_more::{DeepDiagnostic, MacroDeepResult, MacroResult};
 
     /// Marker-only, no-ops.
     pub mod marker {
@@ -340,12 +340,13 @@ pub mod public {
             if self.item_is_code() {
                 // We do NOT support an unclosed last code block, even though GitHub Markdown does.
                 // See CodeBlock.
-                Some(Err(DeepDiagnostic::new_error(format!(
+                Some(Err(Displayish::new_from_display(format!(
                     "The last code block is not enclosed with three backticks. It started at \
                     UTF-8 byte index (indexed from zero) {}. The rest of the input was: {}",
                     self.item_start,
                     &self.markdown_content[self.item_start..]
-                ))))
+                ))
+                .as_macro_deep_diagnostic()))
             } else if self.item_start < self.markdown_content.len() {
                 let result =
                     crate::private::ReadmeBlock::Text(&self.markdown_content[self.item_start..]);
@@ -361,7 +362,8 @@ pub mod public {
     mod readme_blocks_iter_test {
         use crate::private::ReadmeBlock;
         use crate::public::{
-            MacroDeepResult, MacroDeepResultExt, MacroResult, ReadmeBlock as _, ReadmeBlocksIter,
+            MacroDeepResult, MacroDeepResultExt, MacroDiagnosticResult, ReadmeBlock as _,
+            ReadmeBlocksIter,
         };
         use alloc::format;
         use alloc::vec::Vec;
@@ -369,7 +371,7 @@ pub mod public {
         use proc_macro2::Literal;
 
         #[test]
-        fn simple_01() -> MacroResult<()> {
+        fn simple_01() -> MacroDiagnosticResult<()> {
             let v = {
                 let iter = ReadmeBlocksIter::new(
                     "01 text\n\
@@ -406,7 +408,7 @@ pub mod public {
         }
 
         #[test]
-        fn simple_03() -> MacroResult<()> {
+        fn simple_03() -> MacroDiagnosticResult<()> {
             let v = {
                 let iter = ReadmeBlocksIter::new(
                     "01 text\n\
@@ -449,7 +451,7 @@ pub mod public {
         }
 
         #[test]
-        fn simple_code_block_is_last() -> MacroResult<()> {
+        fn simple_code_block_is_last() -> MacroDiagnosticResult<()> {
             let v = {
                 let iter = ReadmeBlocksIter::new(
                     "```\n\
@@ -581,7 +583,7 @@ pub mod public {
     /// `to_string()`.
     ///
     /// PANIC is UNLIKELY - it should be only due to an internal error in rustc and/or proc_macro2.
-    pub fn string_literal_content(enclosed: &Literal) -> MacroResult<OwnedStringSlice> {
+    pub fn string_literal_content(enclosed: &Literal) -> MacroDiagnosticResult<OwnedStringSlice> {
         let (enclosed_as_string, span) = (enclosed.to_string(), enclosed.span());
 
         let (start_incl, end_excl) = string_literal_start_end(&enclosed_as_string).spanned(span)?;
@@ -598,25 +600,27 @@ pub mod public {
                 "expecting an enclosed string literal (at least two bytes), but received: {}",
                 enclosed
             )
-        })?;
+        })
+        .map_macro_err()?;
         let mut chars = enclosed.chars();
         let first = chars
             .next()
-            .ok_or_error_with(|| format!("Can't parse the first character of: {enclosed}"))?;
+            .ok_or_error_with(|| format!("Can't parse the first character of: {enclosed}"))
+            .map_macro_err()?;
 
         if first == '"' || first == 'r' {
             if first == '"' {
                 // ordinary "string literals"
-                let last = chars.next_back().ok_or_error_with(|| {
-                    format!("Can't parse the last character of: {enclosed}")
-                })?;
+                let last = chars
+                    .next_back()
+                    .ok_or_error_with(|| format!("Can't parse the last character of: {enclosed}"))
+                    .map_macro_err()?;
 
                 assert::true_or_error_with(last == '"', || {
                     format!(
                         "Expecting the last character to be a closing quote '\"', but it's: '{last}'."
                     )
-                })?;
-
+                }).map_macro_err()?;
                 Ok((1, enclosed.len() - 1))
             } else {
                 // raw string literals
@@ -629,36 +633,44 @@ pub mod public {
                     } else if c == '"' {
                         break;
                     } else {
-                        return Err(DeepDiagnostic::new_error(
+                        return Err(Displayish::new_from_display(
                             "Expecting a raw string literal, but surprised by '{c}'. \
                                 Whole literal: {enclosed}",
-                        ));
+                        )
+                        .as_macro_deep_diagnostic());
                     }
                 }
                 for _ in 0..num_of_hashes {
-                    let c = chars.next_back().ok_or_error_with(|| {
-                        format!(
-                            "Expecting a raw string literal, but it seems not closed. \
+                    let c = chars
+                        .next_back()
+                        .ok_or_error_with(|| {
+                            format!(
+                                "Expecting a raw string literal, but it seems not closed. \
                                 Expecting a hash character '#' near the end, but out of \
                                 characters. Whole literal: {enclosed}"
-                        )
-                    })?;
+                            )
+                        })
+                        .map_macro_err()?;
                     assert::true_or_error_with(c == '#', || {
                         format!(
                             "Expecting a raw string literal, but it seems not \
                             closed. Surprised by character '{c}' near the end. \
                             Whole literal: {enclosed}"
                         )
-                    })?;
+                    })
+                    .map_macro_err()?;
                 }
-                let c = chars.next_back().ok_or_error_with(|| {
-                    format!(
-                        "Expecting a raw string literal, but it \
+                let c = chars
+                    .next_back()
+                    .ok_or_error_with(|| {
+                        format!(
+                            "Expecting a raw string literal, but it \
                             seems not closed. \
                             Expecting a quote character '\"' near the end, but out of \
                             characters. Whole literal: {enclosed}"
-                    )
-                })?;
+                        )
+                    })
+                    .map_macro_err()?;
                 assert::true_or_error_with(c == '"', || {
                     format!(
                         "Internal or unexpected error: Expecting a raw string literal, but it \
@@ -666,22 +678,23 @@ pub mod public {
                             Expecting a quote character '\"' near the end, but \
                             received '{c}' character instead. Whole literal: {enclosed}"
                     )
-                })?;
+                })
+                .map_macro_err()?;
 
                 Ok((2 + num_of_hashes, enclosed.len() - 1 - num_of_hashes))
             }
         } else {
-            Err(DeepDiagnostic::new_error(
+            Err(Displayish::new_from_display(
                 "Internal Error: Expecting a string literal, which would be either \"...\", or r\"...\", \
                     r#\"...\"#, r##\"...\"## (and so on). But received: {enclosed}",
-            ))
+            ).as_macro_deep_diagnostic())
         }
     }
 
     #[doc(hidden)]
     pub fn config_content_and_span(
         config_content_literal: &Literal,
-    ) -> MacroResult<impl ConfigContentAndSpan> {
+    ) -> MacroDiagnosticResult<impl ConfigContentAndSpan> {
         Ok(crate::private::ConfigContentAndSpan {
             config_content: crate::public::string_literal_content(config_content_literal)?,
             span: config_content_literal.span(),
@@ -691,12 +704,12 @@ pub mod public {
     #[cfg(feature = "std")]
     /// Read configuration from a (TOML) file, its path is given as `config_file_path_literal`.
     ///
-    /// Return impl [MacroResult] of a tuple: [ConfigContentAndSpan], and [OwnedStringSlice] which
-    /// contains a path to the TOML config file.
+    /// Return impl [MacroDiagnosticResult] of a tuple: [ConfigContentAndSpan], and
+    /// [OwnedStringSlice] which contains a path to the TOML config file.
     #[doc(hidden)]
     pub fn config_content_and_span_by_file(
         config_file_path_literal: &Literal,
-    ) -> MacroResult<(impl ConfigContentAndSpan, OwnedStringSlice)> {
+    ) -> MacroDiagnosticResult<(impl ConfigContentAndSpan, OwnedStringSlice)> {
         let toml_config_file_path =
             crate::public::string_literal_content(config_file_path_literal)?;
 
@@ -716,7 +729,7 @@ pub mod public {
     #[doc(hidden)]
     pub fn config_and_span(
         config_content_and_span: &impl ConfigContentAndSpan,
-    ) -> MacroResult<impl ConfigAndSpan> {
+    ) -> MacroDiagnosticResult<impl ConfigAndSpan> {
         let config =
             toml::from_str::<crate::private::Config>(config_content_and_span.config_content());
 
@@ -727,6 +740,7 @@ pub mod public {
                     config_content_and_span.config_content()
                 )
             })
+            .map_macro_err()
             .spanned(config_content_and_span.span())?;
 
         Ok(crate::private::ConfigAndSpan {
@@ -745,7 +759,7 @@ pub mod public {
     /// file and not from a test. (That is, [proc_macro2::Span::local_file] must return [Some].)
     ///
     /// Therefore, this function is tested as a part of `prudent-rs/mce_proc`.
-    fn load_file(span: Span, file_relative_path: impl AsRef<str>) -> MacroResult<String> {
+    fn load_file(span: Span, file_relative_path: impl AsRef<str>) -> MacroDiagnosticResult<String> {
         let file_relative_path = file_relative_path.as_ref();
 
         let file_full_path = {
@@ -759,6 +773,7 @@ pub mod public {
                     should have a known location."
                     )
                 })
+                .map_macro_err()
                 .spanned(span)?;
             let invoker_parent_dir = invoker_file_path
                 .parent()
@@ -770,6 +785,7 @@ pub mod public {
                     may exist, but we can't get its parent directory."
                     )
                 })
+                .map_macro_err()
                 .spanned(span)?;
             invoker_parent_dir.join(file_relative_path)
         };
@@ -785,12 +801,15 @@ pub mod public {
                         .unwrap_or("(PATH UNKNOWN OR NOT UTF-8)")
                 )
             })
+            .map_macro_err()
             .spanned(span)
     }
 
     #[cfg(feature = "std")]
     #[doc(hidden)]
-    pub fn readme_load(config_and_span: &impl ConfigAndSpan) -> MacroResult<impl ReadmeLoaded> {
+    pub fn readme_load(
+        config_and_span: &impl ConfigAndSpan,
+    ) -> MacroDiagnosticResult<impl ReadmeLoaded> {
         let markdown_file_path = config_and_span.config().markdown_file_path();
         let span = config_and_span.span();
         let markdown_file_content = load_file(span, markdown_file_path)?;
