@@ -361,13 +361,12 @@ pub mod public {
     #[cfg(test)]
     mod readme_blocks_iter_test {
         use crate::private::ReadmeBlock;
-        use crate::public::{
-            MacroDeepResult, MacroDeepResultExt, MacroDiagnosticResult, ReadmeBlock as _,
-            ReadmeBlocksIter,
-        };
+        use crate::public::{ReadmeBlock as _, ReadmeBlocksIter};
         use alloc::format;
         use alloc::vec::Vec;
         use core::str::FromStr;
+        use dis::prelude_ext::proc_macro2_diagnostics::*;
+        use dis::{MacroDeepResult, MacroDiagnosticResult};
         use proc_macro2::Literal;
 
         #[test]
