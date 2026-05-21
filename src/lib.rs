@@ -733,7 +733,7 @@ pub mod public {
             toml::from_str::<crate::private::Config>(config_content_and_span.config_content());
 
         let config = config
-            .map_error_dbg_with(|| {
+            .map_err_dbg_with(|| {
                 format!(
                     "Can't parse literal's content as an expected TOML config. Content: {}",
                     config_content_and_span.config_content()
@@ -792,7 +792,7 @@ pub mod public {
         // Error handling is modelling https://doc.rust-lang.org/nightly/src/core/result.rs.html
         // > `fn unwrap_failed`, which invokes `panic!("{msg}: {error:?}");`
         std::fs::read_to_string(&file_full_path)
-            .map_error_dbg_with(|| {
+            .map_err_dbg_with(|| {
                 format!(
                     "expecting a file {}, but opening it failed",
                     file_full_path
