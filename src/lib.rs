@@ -64,11 +64,10 @@ pub mod public {
             fn is_copy_verbatim(&self) -> bool;
             fn is_prefixed(&self) -> bool;
 
-            /// If [None], then the preamble is NOT
-            /// [crate::private::config::Preamble::ItemsWithPrefix]. If [Some], then the preamble IS
-            /// [crate::private::config::Preamble::ItemsWithPrefix], regardless of whether the
-            /// &[`str`] is empty or not. If &[`str`] is empty, then it's the same as if
-            /// [Preamble::is_copy_verbatim] was `true`.
+            /// - If [None], then [Preamble::is_copy_verbatim] is `false`.
+            /// - If [Some], then [Preamble::is_copy_verbatim] is `true`, regardless of whether the
+            ///   `&str` is empty or not. If `&str` is empty, then it's the same as if
+            ///   [Preamble::is_copy_verbatim] was `true`.
             fn prefix(&self) -> Option<&str>;
         }
         assert_dyn_compatible!(Preamble);
@@ -110,7 +109,7 @@ pub mod public {
         /// Caveat: Independent/NOT related to filtering by mce_tag value:
         /// - Setting this to `true` does NOT indicate whether code blocks are filtered by mce_tag
         ///   value or not.
-        /// - Code blocks CAN be filtered by mce_tag value even if [Self::pass_through_mce_tag] is
+        /// - Code blocks *can* be filtered by mce_tag value even if [Config::pass_through_tags] is
         ///   `false`.
         ///
         /// Filtering is determined by the actual proc macro invoked (out of `mce-proc`).
@@ -190,11 +189,11 @@ pub mod public {
     }
     assert_dyn_compatible!(ReadmeBlock);
 
-    /// Parse a README.md-like input. It's an iterator over [ReadmeBlock].
+    /// Parse a `README.md`-like input. It's an iterator over [ReadmeBlock].
     ///
     /// We have used a function that called [core::iter::from_fn] and returned a similar iterator.
-    /// But that over-complicated the generic signature of [Extracted] to have an `impl
-    /// Iterator<Item = ...>` bound. That caused [Extracted]
+    /// But that over-complicated the generic signature of [ReadmeExtracted] to have an `impl
+    /// Iterator<Item = ...>` bound. That caused [ReadmeExtracted]
     /// - to have too verbose `impl`, and
     /// - not to be `&dyn`-compatible.
     #[derive(Debug)]
@@ -505,14 +504,14 @@ pub mod public {
         fn markdown_file_path(&self) -> &str;
 
         /// Content of the first text block, if any, but only if we do expect a preamble, that is,
-        /// if [crate::public::config::Preamble::is_no_preamble] returns `false`.
+        /// if [crate::public::config::Preamble::is_none] returns `false`.
         ///
         /// If it is [Some], then it must be the "text" variant of [ReadmeBlock], that is, its
         /// [ReadmeBlock::is_code] must return [Some].
         fn preamble_text(&self) -> Option<&dyn ReadmeBlock>;
 
         /// Content of the first code block, if any, but only if we do expect a preamble, that is,
-        /// if [crate::public::config::Preamble::is_no_preamble] returns `false`.
+        /// if [crate::public::config::Preamble::is_none] returns `false`.
         ///
         /// If it is [Some], then it must be the "code" variant of [ReadmeBlock], that is, its
         /// [ReadmeBlock::is_code] must return [Some].
@@ -563,7 +562,7 @@ pub mod public {
     ///   backslash character '\\' in a raw string literal does no escaping.
     ///
     /// There does exist
-    /// https://docs.rs/proc-macro2/latest/proc_macro2/struct.Literal.html#method.str_value, but
+    /// <https://docs.rs/proc-macro2/latest/proc_macro2/struct.Literal.html#method.str_value>, but
     /// - enabling it is not trivial (its `procmacro2_semver_exempt` is NOT a feature); and anyway
     /// - it works with `nightly` Rust toolchain only.
     ///
