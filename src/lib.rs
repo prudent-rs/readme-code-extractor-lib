@@ -1,26 +1,7 @@
 #![doc = include_str!("../README.md")]
 #![cfg_attr(not(feature = "std"), no_std)]
-extern crate alloc;
 
-// In VS Code
-// - install https://github.com/ruschaaf/extended-embedded-languages =
-//   https://marketplace.visualstudio.com/items?itemName=walteh.embedded-languages-vscode
-// - and prefix the raw string with `/*toml*/ ` - see
-//   https://github.com/ruschaaf/extended-embedded-languages#embedded-languages
-// - have have both the comment /*toml*/ and the following string opening quote r" ON THE SAME LINE.
-//   Otherwise we don't get embedded highlighting with "Embedded Languages" for VS Code.
-#[allow(clippy::empty_line_after_outer_attr)]
-#[doc = /*toml*/ r#"
-    a = "b"
-    [xx]
-    y = 1
-    [dd.xx]
-    [[x]]
-    h = 1.0
-    q = { y = 1. b = 2}
-    serde = { version = "1.0.113", features = ["derive"] }
-"#]
-const _: &str = "...";
+extern crate alloc;
 
 /// Assert that a given trait is dyn-compatible.
 macro_rules! assert_dyn_compatible {
@@ -542,10 +523,11 @@ pub mod public {
         }
         #[cfg(feature = "std")]
         fn new_from_whole_string(s: String) -> Self {
+            let start_incl = 0;
             let end_excl = s.len();
             Self {
                 s,
-                start_incl: 0,
+                start_incl,
                 end_excl,
             }
         }
@@ -1196,7 +1178,7 @@ mod trait_impls {
 /// Internal, used between crates `mce-lib` and `mce-proc` and `mce` to assure that they're of the
 /// same version.
 pub const fn is_exact_version(expected_version: &'static str) -> bool {
-    matches!(expected_version.as_bytes(), b"0.0.1")
+    matches!(expected_version.as_bytes(), b"0.0.2")
 }
 
 /// No need to be public.
