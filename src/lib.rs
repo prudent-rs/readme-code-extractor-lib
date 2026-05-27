@@ -61,7 +61,7 @@ pub mod public {
             /// Example of useful prefix: `#[test] fn test_` for test functions to generate.
             fn top_prefix(&self) -> &str;
             /// Suffix to be appended (still before the beginning of any non-preamble code block),
-            /// after a mce_tag (if any). Appended REGARDLESS of whether there is a mce_tag or no
+            /// after a mce_tag (if any). Appended REGARDLESS of whether there is an mce_tag or no
             /// mce_tag (that is, the mce_tag is empty).
             fn mce_tag_suffix(&self) -> &str;
             /// Suffix to be appended after any non-preamble code block.
@@ -94,7 +94,8 @@ pub mod public {
         ///   `false`.
         ///
         /// Filtering is determined by the actual proc macro invoked (out of `mce-proc`).
-        fn pass_through_tags(&self) -> bool;
+        fn pass_through_mce_tags(&self) -> bool;
+
         #[allow(private_interfaces)]
         fn _seal(&self, _: &crate::SealedTraitFunParam);
     }
@@ -1062,7 +1063,7 @@ mod trait_impls {
         fn final_suffix(&self) -> &str {
             self.final_suffix
         }
-        fn pass_through_tags(&self) -> bool {
+        fn pass_through_mce_tags(&self) -> bool {
             self.pass_through_tags
         }
         #[allow(private_interfaces)]
@@ -1178,7 +1179,7 @@ mod trait_impls {
 /// Internal, used between crates `mce-lib` and `mce-proc` and `mce` to assure that they're of the
 /// same version.
 pub const fn is_exact_version(expected_version: &'static str) -> bool {
-    matches!(expected_version.as_bytes(), b"0.0.2")
+    matches!(expected_version.as_bytes(), b"0.0.3")
 }
 
 /// No need to be public.

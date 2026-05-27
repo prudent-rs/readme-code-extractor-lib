@@ -6,8 +6,9 @@ Mostly internal: Most of `mce-lib` is to be used by
 [`crates.io/crates/mce-proc`](https://crates.io/crates/mce-proc)
 ([`prudent-rs/mce-proc`](https://github.com/prudent-rs/mce-proc)) only, not directly.
 
-The only initial reason for this crate to exist as separate from `mce` was to have examples and
-up-to-date published documentation (on docs.rs).
+The initial reason for this crate to exist as separate from `mce` was to have examples and
+up-to-date published documentation (on docs.rs). As a benefit, `mce-lib` serves for documentation of
+configuration fields of `mce` (and also `mce-proc`).
 
 ## Configuration in TOML only
 

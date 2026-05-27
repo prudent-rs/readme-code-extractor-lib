@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-May-27
+
+### Version 0.0.3
+
+Renamed `pass_through_tags` -> `pass_through_mce_tags`.
+
 ## 2026-May-26
 
 ### Version 0.0.2
