@@ -73,7 +73,9 @@ pub mod public {
     }
 
     pub trait Config: Debug {
-        /// Markdown file path, relative to where the relevant mce's macro is being used.
+        /// Markdown file path, relative to where the relevant mce's macro is being used. NOT
+        /// relative to the location of TOML configuration file, because there may not be any - if
+        /// TOML configuration is given in a string literal.
         fn markdown_file_path(&self) -> &str;
 
         /// Before preamble (and it applies even if [config::Preamble::is_none]).
@@ -178,7 +180,7 @@ pub mod public {
     /// Iterator<Item = ...>` bound. That caused [ReadmeExtracted]
     /// - to have too verbose `impl`, and
     /// - not to be `&dyn`-compatible.
-    #[derive(Debug)]
+    #[derive(Clone, Debug)]
     pub struct ReadmeBlocksIter<'a> {
         markdown_content: &'a str,
         pairs: Peekable<CharIndices<'a>>,
@@ -358,7 +360,7 @@ pub mod public {
                     02 text",
                 );
                 let span = Literal::from_str("0").unwrap().span();
-                iter.collect::<MacroDeepResult<Vec<_>>>().spanned(span)?
+                iter.collect::<MacroDeepResult<Vec<_>>>().span_err(span)?
             };
             assert_eq!(v.len(), 1);
 
@@ -398,7 +400,7 @@ pub mod public {
                     text again",
                 );
                 let span = Literal::from_str("0").unwrap().span();
-                iter.collect::<MacroDeepResult<Vec<_>>>().spanned(span)?
+                iter.collect::<MacroDeepResult<Vec<_>>>().span_err(span)?
             };
             assert_eq!(v.len(), 3);
 
@@ -439,7 +441,7 @@ pub mod public {
                     ```",
                 );
                 let span = Literal::from_str("0").unwrap().span();
-                iter.collect::<MacroDeepResult<Vec<_>>>().spanned(span)?
+                iter.collect::<MacroDeepResult<Vec<_>>>().span_err(span)?
             };
             assert_eq!(v.len(), 2);
 
@@ -457,7 +459,7 @@ pub mod public {
                     ",
                 );
                 let span = Literal::from_str("0").unwrap().span();
-                iter.collect::<MacroDeepResult<Vec<_>>>().spanned(span)
+                iter.collect::<MacroDeepResult<Vec<_>>>().span_err(span)
             };
             assert!(matches!(r, Err(_)));
             assert!(
@@ -474,7 +476,7 @@ pub mod public {
                     ",
                 );
                 let span = Literal::from_str("0").unwrap().span();
-                iter.collect::<MacroDeepResult<Vec<_>>>().spanned(span)
+                iter.collect::<MacroDeepResult<Vec<_>>>().span_err(span)
             };
             assert!(r.is_ok());
             assert_eq!(r.unwrap()[1].code().unwrap().mce_tag(), Some("01"));
@@ -567,7 +569,8 @@ pub mod public {
     pub fn string_literal_content(enclosed: &Literal) -> MacroDiagnosticResult<OwnedStringSlice> {
         let (enclosed_as_string, span) = (enclosed.to_string(), enclosed.span());
 
-        let (start_incl, end_excl) = string_literal_start_end(&enclosed_as_string).spanned(span)?;
+        let (start_incl, end_excl) =
+            string_literal_start_end(&enclosed_as_string).span_err(span)?;
         Ok(OwnedStringSlice::new_from_string(
             enclosed_as_string,
             start_incl,
@@ -722,7 +725,7 @@ pub mod public {
                 )
             })
             .map_macro_err()
-            .spanned(config_content_and_span.span())?;
+            .span_err(config_content_and_span.span())?;
 
         Ok(crate::private::ConfigAndSpan {
             config,
@@ -755,7 +758,7 @@ pub mod public {
                     )
                 })
                 .map_macro_err()
-                .spanned(span)?;
+                .span_err(span)?;
             let invoker_parent_dir = invoker_file_path
                 .parent()
                 .ok_or_error_with(|| {
@@ -767,7 +770,7 @@ pub mod public {
                     )
                 })
                 .map_macro_err()
-                .spanned(span)?;
+                .span_err(span)?;
             invoker_parent_dir.join(file_relative_path)
         };
 
@@ -783,7 +786,7 @@ pub mod public {
                 )
             })
             .map_macro_err()
-            .spanned(span)
+            .span_err(span)
     }
 
     #[cfg(feature = "std")]
@@ -952,7 +955,7 @@ pub(crate) mod private {
         pub config: &'a dyn crate::public::Config,
     }
 
-    #[derive(Debug)]
+    #[derive(Clone, Debug)]
     pub struct CodeBlock<'a> {
         pub triple_backtick_suffix: &'a str,
         pub triple_backtick_suffix_parts: Vec<&'a str>,
@@ -960,7 +963,7 @@ pub(crate) mod private {
         pub code: &'a str,
     }
 
-    #[derive(Debug)]
+    #[derive(Clone, Debug)]
     pub enum ReadmeBlock<'a> {
         Text(&'a str),
         Code(CodeBlock<'a>),
@@ -1179,7 +1182,7 @@ mod trait_impls {
 /// Internal, used between crates `mce-lib` and `mce-proc` and `mce` to assure that they're of the
 /// same version.
 pub const fn is_exact_version(expected_version: &'static str) -> bool {
-    matches!(expected_version.as_bytes(), b"0.0.3")
+    matches!(expected_version.as_bytes(), b"0.0.4")
 }
 
 /// No need to be public.
