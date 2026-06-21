@@ -1,6 +1,6 @@
 [package]
 name = "mce-lib"
-version = "0.0.4"
+version = "0.0.5"
 
 edition = "2024"
 # Requiring Rust 1.88 for https://doc.rust-lang.org/proc_macro/struct.Span.html#method.local_file.
@@ -23,7 +23,11 @@ proc-macro2 = {version="1.0.60", features=["span-locations"] }
 serde = { version = "1.0.113", features = ["derive"] }
 toml = { version = "1.0.0", default-features = false, features = ["parse", "serde"] }
 proc-macro2-diagnostics = "0.10.1"
-dis = { version = "0.0.2", path = "../dis", features = ["proc-macro2-diagnostics"]}
+
+# for local development:
+#
+# dis = { version = "0.0.2", path = "../dis", features = ["proc-macro2-diagnostics"]}
+dis = { version = "0.0.2", features = ["proc-macro2-diagnostics"]}
 
 [features]
 std = []

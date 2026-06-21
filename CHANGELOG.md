@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-June-21
+
+### Version 0.0.5
+
+- Added `OwnedStringSlice::new_starting_from(...)`
+
 ## 2026-May-28 (2026-May-29 in UTC)
 
 ### Version 0.0.4

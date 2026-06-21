@@ -517,7 +517,15 @@ pub mod public {
         end_excl: usize,
     }
     impl OwnedStringSlice {
-        fn new_from_string(s: String, start_incl: usize, end_excl: usize) -> Self {
+        fn new(s: String, start_incl: usize, end_excl: usize) -> Self {
+            Self {
+                s,
+                start_incl,
+                end_excl,
+            }
+        }
+        pub fn new_starting_from(s: String, start_incl: usize) -> Self {
+            let end_excl = s.len();
             Self {
                 s,
                 start_incl,
@@ -525,14 +533,8 @@ pub mod public {
             }
         }
         #[cfg(feature = "std")]
-        fn new_from_whole_string(s: String) -> Self {
-            let start_incl = 0;
-            let end_excl = s.len();
-            Self {
-                s,
-                start_incl,
-                end_excl,
-            }
+        fn new_whole(s: String) -> Self {
+            Self::new_starting_from(s, 0)
         }
     }
     impl AsRef<str> for OwnedStringSlice {
@@ -571,7 +573,7 @@ pub mod public {
 
         let (start_incl, end_excl) =
             string_literal_start_end(&enclosed_as_string).span_err(span)?;
-        Ok(OwnedStringSlice::new_from_string(
+        Ok(OwnedStringSlice::new(
             enclosed_as_string,
             start_incl,
             end_excl,
@@ -699,7 +701,7 @@ pub mod public {
 
         let span = config_file_path_literal.span();
         let config_content = load_file(span, &toml_config_file_path)?;
-        let config_content = OwnedStringSlice::new_from_whole_string(config_content);
+        let config_content = OwnedStringSlice::new_whole(config_content);
 
         Ok((
             crate::private::ConfigContentAndSpan {
@@ -1182,7 +1184,7 @@ mod trait_impls {
 /// Internal, used between crates `mce-lib` and `mce-proc` and `mce` to assure that they're of the
 /// same version.
 pub const fn is_exact_version(expected_version: &'static str) -> bool {
-    matches!(expected_version.as_bytes(), b"0.0.4")
+    matches!(expected_version.as_bytes(), b"0.0.5")
 }
 
 /// No need to be public.
