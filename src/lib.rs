@@ -329,7 +329,7 @@ pub mod public {
                     self.item_start,
                     &self.markdown_content[self.item_start..]
                 ))
-                .as_macro_deep_diagnostic()))
+                .dis_as_macro_deep_diagnostic()))
             } else if self.item_start < self.markdown_content.len() {
                 let result =
                     crate::private::ReadmeBlock::Text(&self.markdown_content[self.item_start..]);
@@ -360,7 +360,8 @@ pub mod public {
                     02 text",
                 );
                 let span = Literal::from_str("0").unwrap().span();
-                iter.collect::<MacroDeepResult<Vec<_>>>().span_err(span)?
+                iter.collect::<MacroDeepResult<Vec<_>>>()
+                    .dis_span_err(span)?
             };
             assert_eq!(v.len(), 1);
 
@@ -400,7 +401,8 @@ pub mod public {
                     text again",
                 );
                 let span = Literal::from_str("0").unwrap().span();
-                iter.collect::<MacroDeepResult<Vec<_>>>().span_err(span)?
+                iter.collect::<MacroDeepResult<Vec<_>>>()
+                    .dis_span_err(span)?
             };
             assert_eq!(v.len(), 3);
 
@@ -441,7 +443,8 @@ pub mod public {
                     ```",
                 );
                 let span = Literal::from_str("0").unwrap().span();
-                iter.collect::<MacroDeepResult<Vec<_>>>().span_err(span)?
+                iter.collect::<MacroDeepResult<Vec<_>>>()
+                    .dis_span_err(span)?
             };
             assert_eq!(v.len(), 2);
 
@@ -459,7 +462,7 @@ pub mod public {
                     ",
                 );
                 let span = Literal::from_str("0").unwrap().span();
-                iter.collect::<MacroDeepResult<Vec<_>>>().span_err(span)
+                iter.collect::<MacroDeepResult<Vec<_>>>().dis_span_err(span)
             };
             assert!(matches!(r, Err(_)));
             assert!(
@@ -476,7 +479,7 @@ pub mod public {
                     ",
                 );
                 let span = Literal::from_str("0").unwrap().span();
-                iter.collect::<MacroDeepResult<Vec<_>>>().span_err(span)
+                iter.collect::<MacroDeepResult<Vec<_>>>().dis_span_err(span)
             };
             assert!(r.is_ok());
             assert_eq!(r.unwrap()[1].code().unwrap().mce_tag(), Some("01"));
@@ -572,7 +575,7 @@ pub mod public {
         let (enclosed_as_string, span) = (enclosed.to_string(), enclosed.span());
 
         let (start_incl, end_excl) =
-            string_literal_start_end(&enclosed_as_string).span_err(span)?;
+            string_literal_start_end(&enclosed_as_string).dis_span_err(span)?;
         Ok(OwnedStringSlice::new(
             enclosed_as_string,
             start_incl,
@@ -587,26 +590,28 @@ pub mod public {
                 enclosed
             )
         })
-        .map_macro_err()?;
+        .dis_map_macro_err()?;
         let mut chars = enclosed.chars();
         let first = chars
             .next()
-            .ok_or_error_with(|| format!("Can't parse the first character of: {enclosed}"))
-            .map_macro_err()?;
+            .dis_ok_or_error_with(|| format!("Can't parse the first character of: {enclosed}"))
+            .dis_map_macro_err()?;
 
         if first == '"' || first == 'r' {
             if first == '"' {
                 // ordinary "string literals"
                 let last = chars
                     .next_back()
-                    .ok_or_error_with(|| format!("Can't parse the last character of: {enclosed}"))
-                    .map_macro_err()?;
+                    .dis_ok_or_error_with(|| {
+                        format!("Can't parse the last character of: {enclosed}")
+                    })
+                    .dis_map_macro_err()?;
 
                 assert::true_or_error_with(last == '"', || {
                     format!(
                         "Expecting the last character to be a closing quote '\"', but it's: '{last}'."
                     )
-                }).map_macro_err()?;
+                }).dis_map_macro_err()?;
                 Ok((1, enclosed.len() - 1))
             } else {
                 // raw string literals
@@ -623,20 +628,20 @@ pub mod public {
                             "Expecting a raw string literal, but surprised by '{c}'. \
                                 Whole literal: {enclosed}",
                         )
-                        .as_macro_deep_diagnostic());
+                        .dis_as_macro_deep_diagnostic());
                     }
                 }
                 for _ in 0..num_of_hashes {
                     let c = chars
                         .next_back()
-                        .ok_or_error_with(|| {
+                        .dis_ok_or_error_with(|| {
                             format!(
                                 "Expecting a raw string literal, but it seems not closed. \
                                 Expecting a hash character '#' near the end, but out of \
                                 characters. Whole literal: {enclosed}"
                             )
                         })
-                        .map_macro_err()?;
+                        .dis_map_macro_err()?;
                     assert::true_or_error_with(c == '#', || {
                         format!(
                             "Expecting a raw string literal, but it seems not \
@@ -644,11 +649,11 @@ pub mod public {
                             Whole literal: {enclosed}"
                         )
                     })
-                    .map_macro_err()?;
+                    .dis_map_macro_err()?;
                 }
                 let c = chars
                     .next_back()
-                    .ok_or_error_with(|| {
+                    .dis_ok_or_error_with(|| {
                         format!(
                             "Expecting a raw string literal, but it \
                             seems not closed. \
@@ -656,7 +661,7 @@ pub mod public {
                             characters. Whole literal: {enclosed}"
                         )
                     })
-                    .map_macro_err()?;
+                    .dis_map_macro_err()?;
                 assert::true_or_error_with(c == '"', || {
                     format!(
                         "Internal or unexpected error: Expecting a raw string literal, but it \
@@ -665,7 +670,7 @@ pub mod public {
                             received '{c}' character instead. Whole literal: {enclosed}"
                     )
                 })
-                .map_macro_err()?;
+                .dis_map_macro_err()?;
 
                 Ok((2 + num_of_hashes, enclosed.len() - 1 - num_of_hashes))
             }
@@ -673,7 +678,7 @@ pub mod public {
             Err(Displayish::new_from_display(
                 "Internal Error: Expecting a string literal, which would be either \"...\", or r\"...\", \
                     r#\"...\"#, r##\"...\"## (and so on). But received: {enclosed}",
-            ).as_macro_deep_diagnostic())
+            ).dis_as_macro_deep_diagnostic())
         }
     }
 
@@ -720,14 +725,14 @@ pub mod public {
             toml::from_str::<crate::private::Config>(config_content_and_span.config_content());
 
         let config = config
-            .map_err_dbg_with(|| {
+            .dis_map_err_dbg_with(|| {
                 format!(
                     "Can't parse literal's content as an expected TOML config. Content: {}",
                     config_content_and_span.config_content()
                 )
             })
-            .map_macro_err()
-            .span_err(config_content_and_span.span())?;
+            .dis_map_macro_err()
+            .dis_span_err(config_content_and_span.span())?;
 
         Ok(crate::private::ConfigAndSpan {
             config,
@@ -751,7 +756,7 @@ pub mod public {
         let file_full_path = {
             let invoker_file_path = span
                 .local_file()
-                .ok_or_error_with(|| {
+                .dis_ok_or_error_with(|| {
                     format!(
                         "Rust source file that invoked mce_lib::load_file(...) \
                     (through one of mce's macros like all, all_by_file, nth, \
@@ -759,11 +764,11 @@ pub mod public {
                     should have a known location."
                     )
                 })
-                .map_macro_err()
-                .span_err(span)?;
+                .dis_map_macro_err()
+                .dis_span_err(span)?;
             let invoker_parent_dir = invoker_file_path
                 .parent()
-                .ok_or_error_with(|| {
+                .dis_ok_or_error_with(|| {
                     format!(
                         "Rust source file that invoked mce_lib::load_file(...) \
                     (through one of mce's macros like all, all_by_file, nth, \
@@ -771,15 +776,15 @@ pub mod public {
                     may exist, but we can't get its parent directory."
                     )
                 })
-                .map_macro_err()
-                .span_err(span)?;
+                .dis_map_macro_err()
+                .dis_span_err(span)?;
             invoker_parent_dir.join(file_relative_path)
         };
 
         // Error handling is modelling https://doc.rust-lang.org/nightly/src/core/result.rs.html
         // > `fn unwrap_failed`, which invokes `panic!("{msg}: {error:?}");`
         std::fs::read_to_string(&file_full_path)
-            .map_err_dbg_with(|| {
+            .dis_map_err_dbg_with(|| {
                 format!(
                     "expecting a file {}, but opening it failed",
                     file_full_path
@@ -787,8 +792,8 @@ pub mod public {
                         .unwrap_or("(PATH UNKNOWN OR NOT UTF-8)")
                 )
             })
-            .map_macro_err()
-            .span_err(span)
+            .dis_map_macro_err()
+            .dis_span_err(span)
     }
 
     #[cfg(feature = "std")]
@@ -1184,7 +1189,7 @@ mod trait_impls {
 /// Internal, used between crates `mce-lib` and `mce-proc` and `mce` to assure that they're of the
 /// same version.
 pub const fn is_exact_version(expected_version: &'static str) -> bool {
-    matches!(expected_version.as_bytes(), b"0.0.5")
+    matches!(expected_version.as_bytes(), b"0.0.6")
 }
 
 /// No need to be public.
